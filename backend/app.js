@@ -18,10 +18,147 @@ const User = require("./models/User");
 
 const auth = require("./middleware/auth");
 
-//chec
+const multer = require("multer");
+const pdfParse = require("pdf-parse");
+
+
+
+//check
 // --- Express
 const app = express();
 app.use(express.json());
+
+const upload = multer({ 
+  storage: multer.memoryStorage() ,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
+});
+
+async function generateFlashcardsFromTextWithLlama(rawText) {
+  const MAX_CHARS = 12000; // keep it cheap & fast
+  let text = (rawText || "").trim();
+  if (!text) {
+    throw new Error("No text provided to Llama");
+  }
+  if (text.length > MAX_CHARS) {
+    text = text.slice(0, MAX_CHARS);
+  }
+
+  const systemPrompt = `
+You are a study assistant that turns class notes into clear Q&A flashcards.
+
+Rules:
+- Focus on key concepts, definitions, formulas, and important facts.
+- Questions must be short and specific.
+- Answers must be concise but correct.
+- Avoid duplicates and trivial facts.
+- Aim for 10–25 cards if the notes are long enough.
+- Respond with JSON ONLY in this exact format:
+
+{
+  "cards": [
+    { "question": "Question 1?", "answer": "Answer 1." },
+    { "question": "Question 2?", "answer": "Answer 2." }
+  ]
+}
+`.trim();
+
+  const userPrompt = `
+Here are the notes:
+
+"""${text}"""
+
+Turn these notes into high-quality flashcards.
+`.trim();
+
+  // Call local Llama 3 via Ollama
+  const response = await fetch("http://localhost:11434/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama3",
+      stream: false,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    console.error("Ollama error:", errorText);
+    throw new Error("Llama 3 request failed");
+  }
+
+  const data = await response.json();
+
+  // Ollama's /api/chat response structure:
+  // { message: { role: "assistant", content: "..." }, ... }
+  const content =
+    data?.message?.content ||
+    data?.choices?.[0]?.message?.content ||
+    "";
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e) {
+    console.error("Failed to parse Llama JSON:", content);
+    throw new Error("Llama 3 output was not valid JSON");
+  }
+
+  const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
+  return cards
+    .filter(
+      (c) =>
+        c &&
+        typeof c.question === "string" &&
+        typeof c.answer === "string" &&
+        c.question.trim() &&
+        c.answer.trim()
+    )
+    .map((c) => ({
+      question: c.question.trim(),
+      answer: c.answer.trim(),
+    }));
+}
+app.post("/api/flashcards/import/pdf", auth, upload.single("file"), async (req, res) => {
+  try{
+    const {folderId} = req.body;
+    if(!folderId){
+      return res.status(400).json({error: "folderId is required"});
+    }
+    if(!req.file){
+      return res.status(400).json({error: "PDF file is required"});
+    }
+
+    const folder = await Folder.findOne({_id: folderId, user: req.user._id});
+    if(!folder){
+      return res.status(404).json({error: "Folder not found"});
+    }
+    const pdfData = await pdfParse(req.file.buffer);
+    const text = pdfData.text;
+    if(!text || !text.trim()){
+      return res.status(400).json({error: "Please try importing a pdf where you can select/copy text"});
+    }
+    const cards = await generateFlashcardsFromTextWithLlama(text);
+    if(cards.length === 0){
+      return res.status(500).json({error: "No flashcards generated from PDF"});
+    }
+
+    const docsToCreate = cards.map(c => ({
+      question: c.question,
+      answer: c.answer,
+      folder: folder._id,
+      user: req.user._id,
+    }));
+    const created = await Flashcard.insertMany(docsToCreate);
+    return res.json({ createdCount: created.length, cards: created });
+  } catch(err){
+    console.error("PDF import error:", err);
+    return res.status(500).json({error: "Server error: " + err.message});
+  }
+});
 
 //hellpers
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));

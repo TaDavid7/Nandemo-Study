@@ -40,6 +40,11 @@ export default function Home() {
   // Index
   const [cardindex, setCardIndex] = useState(0);
 
+  // pdf import
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [importStatus, setImportStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+
   // Load folders
   useEffect(() => {
     authfetch(`/api/folders`)
@@ -101,6 +106,53 @@ export default function Home() {
       .then((newCard: Card) => setFlashcards([...flashcards, newCard]));
     setQuestion("");
     setAnswer("");
+  };
+
+  const handleImportPdf = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedFolder || !pdfFile) return;
+
+    setImportStatus("loading");
+    setImportMessage(null);
+
+    const formData = new FormData();
+    formData.append("file", pdfFile);
+    formData.append("folderId", selectedFolder);
+
+    authfetch(`/api/flashcards/import/pdf`, {
+      method: "POST",
+      body: formData, 
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to import PDF");
+        }
+        return res.json();
+      })
+      .then(async (data) => {
+        const createdCount =
+          data.createdCount ?? (Array.isArray(data.cards) ? data.cards.length : null);
+
+        // Refresh flashcards from server so new cards show up
+        return authfetch(`/api/flashcards?folderId=${selectedFolder}`)
+          .then((res) => res.json())
+          .then((cards: Card[]) => {
+            setFlashcards(cards);
+            setImportStatus("done");
+            setImportMessage(
+              createdCount != null
+                ? `Imported ${createdCount} flashcard${createdCount === 1 ? "" : "s"} from PDF.`
+                : "Imported flashcards from PDF."
+            );
+            setPdfFile(null);
+          });
+      })
+      .catch((err: any) => {
+        console.error("Import PDF error:", err);
+        setImportStatus("error");
+        setImportMessage(err.message || "Something went wrong while importing.");
+      });
   };
 
   // Edit flashcard start
@@ -370,6 +422,68 @@ export default function Home() {
               </button>
             </form>
           )}
+          {/* Import PDF */}
+
+          <section className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-1">
+              Import notes from PDF (AI)
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 mb-3">
+              Upload a PDF of your notes to automatically generate flashcards in the selected folder.
+            </p>
+
+            {!selectedFolder && (
+              <p className="mb-3 text-xs text-rose-500">
+                Select a folder above before importing a PDF.
+              </p>
+            )}
+
+            <form onSubmit={handleImportPdf} className="space-y-3">
+              <div>
+                <input
+                  type="file"
+                  name="file"
+                  accept="application/pdf"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setPdfFile(f);
+                    setImportStatus("idle");
+                    setImportMessage(null);
+                  }}
+                  className="block w-full text-xs sm:text-sm text-slate-700
+                             file:mr-4 file:rounded-lg file:border-0
+                             file:bg-indigo-50 file:px-3 file:py-2
+                             file:text-xs sm:file:text-sm file:font-medium
+                             file:text-indigo-700 hover:file:bg-indigo-100"
+                />
+                {pdfFile && (
+                  <p className="mt-1 text-xs text-slate-500 truncate">
+                    Selected: {pdfFile.name}
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={!selectedFolder || !pdfFile || importStatus === "loading"}
+                className="inline-flex items-center rounded-xl bg-indigo-600 px-3 sm:px-4 py-2
+                           text-xs sm:text-sm font-medium text-white shadow
+                           hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {importStatus === "loading" ? "Importing…" : "Import PDF to flashcards"}
+              </button>
+
+              {importMessage && (
+                <p
+                  className={`text-xs sm:text-sm mt-1 ${
+                    importStatus === "error" ? "text-rose-600" : "text-emerald-600"
+                  }`}
+                >
+                  {importMessage}
+                </p>
+              )}
+            </form>
+          </section>
         </div>
 
         {/* Viewer */}
