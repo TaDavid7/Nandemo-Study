@@ -6,12 +6,8 @@ services:
       - "127.0.0.1:4000:4000"
     env_file:
       - .env
-    environment:
-      OLLAMA_BASE_URL: http://ollama:11434
     restart: unless-stopped
     networks: [appnet]
-    depends_on:
-      - ollama 
 
   frontend:
     build:
@@ -25,19 +21,7 @@ services:
     restart: unless-stopped
     networks: [appnet]
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"          # host → container
-    volumes:
-      - ollama-data:/root/.ollama
-    restart: unless-stopped
-    networks: [appnet]
-
 networks:
   appnet:
     driver: bridge
 
-volumes:
-  ollama-data:
