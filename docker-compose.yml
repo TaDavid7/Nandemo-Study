@@ -1,36 +1,33 @@
-version: "3.9"
 services:
   backend:
     build: ./backend
     container_name: flashcards-backend
     ports:
-      - "4000:4000"
-    environment:
-      MONGO_URL: "mongodb+srv://new_user_3:tanioka7861@flashcards.nkagg8c.mongodb.net/?retryWrites=true&w=majority&appName=flashcards"
-      CORS_ORIGIN: "http://localhost:3000"
-      OLLAMA_BASE_URL: "http://ollama:11434"
+      - "127.0.0.1:4000:4000"
+    env_file:
+      - .env
+    restart: unless-stopped
     networks: [appnet]
     depends_on:
-      - ollama
+      - ollama 
 
   frontend:
     build:
       context: ./mem-study-next
       args:
-        NEXT_PUBLIC_SOCKET_URL: "${NEXT_PUBLIC_SOCKET_URL:-http://localhost:4000}"
+        NEXT_PUBLIC_SOCKET_URL: "/api"
     container_name: mem-study-frontend
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    networks:
-      - appnet
+      - "127.0.0.1:3000:3000"
+    depends_on: [backend]
+    restart: unless-stopped
+    networks: [appnet]
 
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     ports:
-      - "11434:11434"
+      - "11434:11434"          # host → container
     volumes:
       - ollama-data:/root/.ollama
     restart: unless-stopped
@@ -39,6 +36,6 @@ services:
 networks:
   appnet:
     driver: bridge
-  
+
 volumes:
   ollama-data:
