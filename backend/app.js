@@ -36,7 +36,7 @@ const upload = multer({
 });
 
 async function generateFlashcardsFromTextWithLlama(rawText) {
-  const MAX_CHARS = 12000; // keep it cheap & fast
+  const MAX_CHARS = 5000; //faster
   let text = (rawText || "").trim();
   if (!text) {
     throw new Error("No text provided to Llama");
