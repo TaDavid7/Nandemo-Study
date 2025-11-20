@@ -21,9 +21,15 @@ const auth = require("./middleware/auth");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 
+const { Agent, setGlobalDispatcher } = require("undici");
+
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 
-
+setGlobalDispatcher(
+  new Agent({
+    headersTimeout: 120_000,  // 120 seconds
+  })
+);
 
 //check
 // --- Express
