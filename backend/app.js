@@ -21,7 +21,6 @@ const auth = require("./middleware/auth");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 
-const { Agent, setGlobalDispatcher } = require("undici");
 const UsageLog = require("./models/UsageLog");
 
 function getTodayDateOnly(){
@@ -29,11 +28,6 @@ function getTodayDateOnly(){
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-setGlobalDispatcher(
-  new Agent({
-    headersTimeout: 120_000,  // 120 seconds
-  })
-);
 
 //check
 // --- Express
