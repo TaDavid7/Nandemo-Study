@@ -26,15 +26,15 @@ services:
     networks:
       - appnet
 
-    ollama:
-      image: ollama/ollama:latest
-      container_name: ollama
-      ports:
-        - "11434:11434"
-      volumes:
-        - ollama-data:/root/.ollama
-      restart: unless-stopped
-      networks: [appnet]
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+    networks: [appnet]
 
 networks:
   appnet:
