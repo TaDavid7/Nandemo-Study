@@ -22,8 +22,12 @@ const multer = require("multer");
 const pdfParse = require("pdf-parse");
 
 const { Agent, setGlobalDispatcher } = require("undici");
+const UsageLog = require("./models/UsageLog");
 
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+function getTodayDateOnly(){
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
 
 setGlobalDispatcher(
   new Agent({
@@ -41,11 +45,11 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
 });
 
-async function generateFlashcardsFromTextWithLlama(rawText) {
+async function generateFlashcardsFromTextWithAI(rawText) {
   const MAX_CHARS = 2000; //faster
   let text = (rawText || "").trim();
   if (!text) {
-    throw new Error("No text provided to Llama");
+    throw new Error("No text provided to AI");
   }
   if (text.length > MAX_CHARS) {
     text = text.slice(0, MAX_CHARS);
@@ -78,13 +82,16 @@ Here are the notes:
 Turn these notes into high-quality flashcards.
 `.trim();
 
-  // Call local Llama 3 via Ollama
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+  // Call AI
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
     body: JSON.stringify({
-      model: "llama3",
-      stream: false,
+      model: "gpt-3.5-turbo",
+      temperature: 0.5, 
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -94,13 +101,13 @@ Turn these notes into high-quality flashcards.
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    console.error("Ollama error:", errorText);
-    throw new Error("Llama 3 request failed");
+    console.error("AI error:", errorText);
+    throw new Error(" requesAIt failed");
   }
 
   const data = await response.json();
 
-  // Ollama's /api/chat response structure:
+  // AI's /api/chat response structure:
   // { message: { role: "assistant", content: "..." }, ... }
   const content =
     data?.message?.content ||
@@ -122,7 +129,7 @@ Turn these notes into high-quality flashcards.
   try {
     parsed = JSON.parse(content);
   } catch (e) {
-    console.error("Failed to parse Llama JSON:", content);
+    console.error("Failed to parse AI JSON:", content);
     let relaxed = jsonText
       .replace(/""([^"]*?)""/g, "'$1'")      // inner double-quotes -> single quotes
       .replace(/,\s*([}\]])/g, "$1");       // trailing commas
@@ -131,7 +138,7 @@ Turn these notes into high-quality flashcards.
       parsed = JSON.parse(relaxed);
     } catch (e2) {
       console.error("Relaxed JSON parse also failed:", relaxed);
-      throw new Error("Llama 3 output was not valid JSON");
+      throw new Error("AI output was not valid JSON");
     }
   }
 
@@ -152,6 +159,11 @@ Turn these notes into high-quality flashcards.
 }
 app.post("/api/flashcards/import/pdf", auth, upload.single("file"), async (req, res) => {
   try{
+    const today = getTodayDateOnly();
+    const log = await UsageLog.findOne({userId: req.user._id, date: today});
+    if(log && log.count >= 5){
+      return res.status(429).json({error: "Daily PDF import limit reached (5 per day)."});
+    }
     const {folderId} = req.body;
     if(!folderId){
       return res.status(400).json({error: "folderId is required"});
@@ -169,7 +181,12 @@ app.post("/api/flashcards/import/pdf", auth, upload.single("file"), async (req, 
     if(!text || !text.trim()){
       return res.status(400).json({error: "Please try importing a pdf where you can select/copy text"});
     }
-    const cards = await generateFlashcardsFromTextWithLlama(text);
+    const cards = await generateFlashcardsFromTextWithAI(text);
+    await UsageLog.updateOne(
+      {userId: req.user._id, date: today},
+      {$inc: {count: 1}},
+      {upsert: true}
+    );
     if(cards.length === 0){
       return res.status(500).json({error: "No flashcards generated from PDF"});
     }
