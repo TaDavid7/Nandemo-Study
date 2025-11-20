@@ -15,12 +15,7 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const isProd = process.env.NODE_ENV === "production";
     return isProd
-      ? [
-        {
-          source: "/api/:path*",
-          destination: "http://backend:4000/api/:path*", 
-        },
-      ] // AWS handles /api routing in prod
+      ? [] // AWS handles /api routing in prod
       : [
           {
             source: "/api/:path*",
