@@ -101,6 +101,17 @@ Turn these notes into high-quality flashcards.
     data?.choices?.[0]?.message?.content ||
     "";
 
+  let jsonText = content.trim();
+  const fenced = jsonText.match(/```json([\s\S]*?)```/i);
+  if (fenced) {
+    jsonText = fenced[1].trim();
+  } else {
+    const braceMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (braceMatch) {
+      jsonText = braceMatch[0];
+    }
+  }
+
   let parsed;
   try {
     parsed = JSON.parse(content);
