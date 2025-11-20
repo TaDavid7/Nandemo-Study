@@ -106,7 +106,16 @@ Turn these notes into high-quality flashcards.
     parsed = JSON.parse(content);
   } catch (e) {
     console.error("Failed to parse Llama JSON:", content);
-    throw new Error("Llama 3 output was not valid JSON");
+    let relaxed = jsonText
+      .replace(/""([^"]*?)""/g, "'$1'")      // inner double-quotes -> single quotes
+      .replace(/,\s*([}\]])/g, "$1");       // trailing commas
+
+    try {
+      parsed = JSON.parse(relaxed);
+    } catch (e2) {
+      console.error("Relaxed JSON parse also failed:", relaxed);
+      throw new Error("Llama 3 output was not valid JSON");
+    }
   }
 
   const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
