@@ -6,13 +6,6 @@ Currently deployed on AWS EC2 with a NGINX to custom domain cardsapp.
 
 ---
 
-# Setup
-Test it here
-https://cardsapp.org
-
-Look at this for API documentation
-https://cardsapp.org/api-docs/
-
 ### Clone the repository
 
 ``` bash
