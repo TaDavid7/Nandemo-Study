@@ -11,9 +11,10 @@ A full-stack flashcard learning platform with real-time multiplayer, speedrun mo
 > **Note:** Live demo temporarily offline — AWS EC2 free trial expired. See [Getting Started](#getting-started) to run locally.
 
 ---
+A screenshot from versus game mode
 
-<!-- Add a screenshot or GIF of the app here -->
-> _Screenshot / demo GIF coming soon_
+<img width="684" height="470" alt="Screenshot 2026-06-28 215436" src="https://github.com/user-attachments/assets/25c6c97f-fc12-432e-80d7-946a0b313455" />
+
 
 ---
 
