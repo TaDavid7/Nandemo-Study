@@ -1,73 +1,113 @@
 # Flashcard Study App
 
-A full-stack flashcard learning platform built with Next.js, React, Express, and MongoDB.
-This app lets users create, organize, and study flashcards grouped into folders. It includes a speedrun and multiplayer mode, using Socket.io for real-time gameplay across multiple players
-Currently deployed on AWS EC2 with a NGINX to custom domain cardsapp.
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white)
+![Socket.io](https://img.shields.io/badge/Socket.io-4-010101?logo=socket.io&logoColor=white)
+
+A full-stack flashcard learning platform with real-time multiplayer, speedrun mode, and spaced repetition tracking.
+
+> **Note:** Live demo temporarily offline — AWS EC2 free trial expired. See [Getting Started](#getting-started) to run locally.
 
 ---
 
-### Clone the repository
+<!-- Add a screenshot or GIF of the app here -->
+> _Screenshot / demo GIF coming soon_
 
-``` bash
+---
+
+## Features
+
+- **Multiplayer Versus Mode** — Socket.io-powered rooms where players race to answer flashcards first; host controls pacing and card reveals
+- **Speedrun Mode** — solo timed run through a deck with live scoring
+- **Spaced Repetition Schema** — flashcard model stores SM-2 fields (ease factor, interval, due date) to support optimal review scheduling
+- **JWT Authentication** — stateless auth with token-based socket handshake for secure real-time connections
+- **Folder Organization** — group cards into folders and select any folder as a game deck
+
+## Tech Stack
+
+| Layer      | Technology                                                     |
+|------------|----------------------------------------------------------------|
+| Frontend   | Next.js 15, React 19, TypeScript, Tailwind CSS, Framer Motion |
+| Backend    | Node.js, Express, Socket.io 4                                  |
+| Database   | MongoDB, Mongoose                                              |
+| Auth       | JSON Web Tokens (JWT)                                          |
+| Deployment | AWS EC2, NGINX (previously deployed)                           |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js v18+
+- A [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) account (free tier works)
+
+### 1. Clone the repository
+
+```bash
 git clone https://github.com/TaDavid7/mem_study.git
+cd mem_study
 ```
 
-### Mongo_URL setup
+### 2. Backend setup
 
-For quick testing, make an account and project, where you should make a cluster (free version should be fine). Then click the connect option (drivers) and select node.js with a version 6.7 or later and copy the connection string you get. Remembering to replace the database password and username to what you set. Under network access, make sure to give whatever ip address your on access 
-
-### Backend setup
 ```bash
 cd backend
 npm install
-# in app.js add you mongo connection string or create a .env and set MONGO_URL = your-mongodb-url
+cp .env.example .env
+```
+
+Edit `.env` with your values:
+
+| Variable      | Description                                         |
+|---------------|-----------------------------------------------------|
+| `MONGO_URL`   | MongoDB Atlas connection string                     |
+| `PORT`        | Express server port (e.g. `5000`)                   |
+| `CORS_ORIGIN` | Frontend URL (e.g. `http://localhost:3000`)         |
+| `JWT_SECRET`  | A long random string used to sign tokens            |
+
+```bash
 npm run dev
 ```
-In backend directory, create your own .env file and set <br>
-CORS_ORIGIN = FRONTEND_CONNECTION <br>
-MONGO_URL = YOUR_MONGO_URL <br>
-PORT = CHOOSE_PORT <br>
 
+### 3. Frontend setup
 
-### Frontend setup
-In frontend setup(mem-study-next), create your own env.local and set <br>
-NEXT_PUBLIC_API_BASE=http://localhost:5000 (or wherever your backend is
 ```bash
 cd ../frontend
 npm install
+cp .env.local.example .env.local
+```
+
+Edit `.env.local` with your values:
+
+| Variable                 | Description                                      |
+|--------------------------|--------------------------------------------------|
+| `NEXT_PUBLIC_API_BASE`   | Backend URL (e.g. `http://localhost:5000`)       |
+| `NEXT_PUBLIC_SOCKET_URL` | Socket server URL (same as API base)             |
+
+```bash
 npm run dev
 ```
 
-Open the app on http://localhost:3000 and it should be running
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-For any changes make to the backend, stop the frontend instance and the backend and rerun. Or if preferred, install nodemon if you want automatic refreshes.
+> **Tip:** Install [nodemon](https://www.npmjs.com/package/nodemon) in the backend for automatic restarts on file changes.
 
----
+## Usage
 
-### Testing app
+1. Register an account and log in
+2. Create a folder, then add flashcards with a question and answer
+3. Choose a mode from the dashboard:
+   - **Study** — flip through your cards at your own pace
+   - **Speedrun** — race through the deck against the clock
+   - **Versus** — share a room code with friends and compete in real time
 
-To use the app, first create a folder named whatever you want and then create a card with a specified question and answer with the folder selected.
-Congrats you have your first folder and flashcard. Create more flashcards if you want to check out other modes.
+## Roadmap
 
---- 
-# Future improvements
-- User authentication
-- Import/export flashcard sets
-- Use machine learning algorithms for spaced repetition as a study mode
-
-
-# Author
-Build by David T.
-Perfect for expanding/testing your own studying purposes
+- [ ] Import/export flashcard sets (CSV / Anki format)
+- [ ] Active spaced repetition study mode (SM-2 fields already in schema)
+- [ ] Persistent leaderboards
 
 ## License
-Licensed under the Apache License 2.0 – see the [LICENSE](LICENSE) file for details.
 
-
-
-
-
-
-
-
-
+Licensed under the Apache License 2.0 — see [LICENSE](LICENSE) for details.

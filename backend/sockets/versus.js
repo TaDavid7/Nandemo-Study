@@ -187,7 +187,7 @@ module.exports = function attachVersus(io) {
       }
     });
 
-    socket.on("correctmove", ({code}) => {
+    socket.on("correctMove", ({code}) => {
       code = String(code || "").toUpperCase();
       const room = rooms.get(code);
       if (!room || !room.started) return;

@@ -1,6 +1,5 @@
-const mongoose = require('mongoose');   // loads mongoose library
+const mongoose = require('mongoose');
 
-// Flashcard schema
 const flashcardSchema = new mongoose.Schema({
     question: { type: String, required: true },
     answer: { type: String, required: true },

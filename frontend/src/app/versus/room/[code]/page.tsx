@@ -46,6 +46,7 @@ export default function VersusRoomPage() {
   const [versusName, setVersusName] = useState(
     () => (typeof window !== "undefined" ? localStorage.getItem("versusName") || "" : "")
   );
+  const [roomClosedMsg, setRoomClosedMsg] = useState<string | null>(null);
 
 
   // helpers
@@ -95,8 +96,8 @@ export default function VersusRoomPage() {
     const onResults = (payload: ResultsPayload) => setFinalResults(payload);
 
     const onRoomClosed = () => {
-      alert("The host closed the room.");
-      router.push("/");
+      setRoomClosedMsg("The host closed the room. Redirecting…");
+      setTimeout(() => router.push("/"), 2000);
     };
 
     socket.on("connect", onConnect);
@@ -191,8 +192,11 @@ export default function VersusRoomPage() {
         </ul>
       </section>
 
-      {/* debug: who am i vs host */}
-      <p className="text-xs text-gray-500">me:{socketId || "—"} host:{room?.hostId || "—"}</p>
+      {roomClosedMsg && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {roomClosedMsg}
+        </div>
+      )}
 
       {/* main card */}
       <section className="border rounded-2xl p-6">
