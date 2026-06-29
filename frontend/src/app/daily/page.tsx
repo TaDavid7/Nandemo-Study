@@ -16,15 +16,13 @@ export default function daily(){
     const [gameReady, setGameReady]= useState<boolean>(false);
 
     useEffect(() => {
+        if (!localStorage.getItem("token")) return;
         authfetch("/api/folders")
             .then(res => res.json())
             .then((data) => {
-                if (!Array.isArray(data)) {
-                    console.error("Invalid folders response:", data);
-                    return;
-                }
-            setFolders(data);
-            })
+                if (!Array.isArray(data)) return;
+                setFolders(data);
+            });
     }, []);
 
      const handleToggle = async (id: string, currentValue: boolean) => {

@@ -28,30 +28,18 @@ export default function QuizPage() {
 
 
   useEffect(() => {
-  const token = localStorage.getItem("token");
-  if (!token) {
-    console.warn("No token, redirecting...");
-    router.push("/account");
-    return;
-  }
-
-  authfetch("/api/folders")
-    .then(async (res) => {
-      const text = await res.text();
-      console.log("🔍 Raw /api/folders response text:", text);
-
-      try {
-        const data = JSON.parse(text);
-        if (!Array.isArray(data)) {
-          console.error("Invalid folders response:", data);
-          return;
-        }
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/account");
+      return;
+    }
+    authfetch("/api/folders")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!Array.isArray(data)) return;
         setFolders(data);
-      } catch (err) {
-        console.error("Failed to parse folders response as JSON", err);
-      }
-    });
-}, []);
+      });
+  }, []);
   
   
   //check if there are folders

@@ -47,15 +47,13 @@ export default function Home() {
 
   // Load folders
   useEffect(() => {
+    if (!localStorage.getItem("token")) return;
     authfetch(`/api/folders`)
       .then((res) => res.json())
       .then((data) => {
-        if (!Array.isArray(data)) {
-          console.error("Invalid folders response:", data);
-          return;
-        }
+        if (!Array.isArray(data)) return;
         setFolders(data);
-    });
+      });
   }, []);
 
   // Load flashcards when folder changes
