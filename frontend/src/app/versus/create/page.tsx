@@ -3,12 +3,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import type { RoomState } from "@/types/versus";
-import {authfetch} from "@/lib/authfetch";
+import { authfetch } from "@/lib/authfetch";
 
 export default function CreateRoomPage() {
   const [folders, setFolders] = useState<{ _id: string; name: string }[]>([]);
   const [folderId, setFolderId] = useState("");
-  const [username, setUsername] = useState("a");
+  const [username, setUsername] = useState(
+    () => (typeof window !== "undefined" ? localStorage.getItem("username") || "" : "")
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -24,17 +26,18 @@ export default function CreateRoomPage() {
     const name = username.trim();
     if (!folderId || !name) return;
 
+    localStorage.setItem("username", name);
     const socket = getSocket();
     setLoading(true);
     setError(null);
 
-    //safety timer
     const t = setTimeout(() => {
       setLoading(false);
       setError("Creating room timed out.");
     }, 10000);
 
-    socket.emit("createRoom", 
+    socket.emit(
+      "createRoom",
       { folderId, username: name },
       (resp: { ok: boolean; code?: string; error?: string }) => {
         clearTimeout(t);
@@ -43,14 +46,14 @@ export default function CreateRoomPage() {
           setError(resp?.error || "Failed to create room");
           return;
         }
-        router.push(`/versus/room/${resp.code}?me=${encodeURIComponent(username.trim())}`);
+        router.push(`/versus/room/${resp.code}`);
       }
     );
 
     const onRoomState = (rs: RoomState) => {
       if (rs.code) {
         socket.off("roomState", onRoomState);
-        router.push(`/versus/room/${rs.code}?me=${encodeURIComponent(name)}`);
+        router.push(`/versus/room/${rs.code}`);
       }
     };
 
@@ -67,30 +70,41 @@ export default function CreateRoomPage() {
         </div>
       )}
 
+      <div className="rounded-2xl border bg-white p-6 space-y-5 shadow-sm">
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-slate-700">Display name</label>
+          <input
+            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            placeholder="Enter your name…"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
 
-      <div className="space-y-3">
-        <label className="block text-sm">Folder</label>
-        <select
-          className="border rounded p-2 w-full"
-          value={folderId}
-          onChange={(e) => setFolderId(e.target.value)}
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-slate-700">Folder</label>
+          <select
+            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+          >
+            <option value="">Select a folder…</option>
+            {folders.map((f) => (
+              <option key={f._id} value={f._id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={onCreate}
+          disabled={!username.trim() || !folderId || loading}
+          className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          <option value="">Select a folder…</option>
-          {folders.map((f) => (
-            <option key={f._id} value={f._id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
+          {loading ? "Creating…" : "Create room"}
+        </button>
       </div>
-
-      <button
-        onClick={onCreate}
-        disabled={!username.trim() || !folderId || loading}
-        className="rounded-2xl px-4 py-2 shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? "Creating…" : "Create room"}
-      </button>
     </div>
   );
 }
