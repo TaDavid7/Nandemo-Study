@@ -1,6 +1,5 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {authfetch} from "@/lib/authfetch";
 import DailyPractice from "@/components/DailyPractice";
 

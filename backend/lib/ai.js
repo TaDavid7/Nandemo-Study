@@ -61,7 +61,7 @@ Rules:
 
   let parsed;
   try {
-    parsed = JSON.parse(content);
+    parsed = JSON.parse(jsonText);
   } catch (e) {
     console.error("Failed to parse AI JSON:", content);
     const relaxed = jsonText

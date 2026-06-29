@@ -222,7 +222,6 @@ module.exports = function attachVersus(io) {
       if(!room || !room.started) return;
       if(socket.id !== room.hostId) return;
 
-      io.to(code).emit("revealAnswer", {index: room.currentIndex});
       const cur = room.deck[room.currentIndex];
       io.to(code).emit("revealAnswer", {
         index: room.currentIndex,

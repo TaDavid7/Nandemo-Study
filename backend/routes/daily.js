@@ -20,7 +20,7 @@ router.get("/daily", auth, async (req, res) => {
     const review = await Flashcard.find({
       ...baseMatch,
       due: { $lte: endOfToday },
-      reps: { $gte: 0 },
+      reps: { $gt: 0 },
     })
       .select("_id question answer folder ease interval reps lapses due")
       .sort({ due: 1, _id: 1 })

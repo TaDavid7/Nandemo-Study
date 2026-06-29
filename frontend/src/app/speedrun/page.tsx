@@ -63,7 +63,7 @@ export default function QuizPage() {
     router.push("/home");
   }
 
-  const isDisabled = !selectedFolder || !time || selectedFolder.length<=5;
+  const isDisabled = !selectedFolder || !time || flashcards.length <= 4;
 
   if (loading) {
     return <div className="p-6">Loading quiz...</div>;

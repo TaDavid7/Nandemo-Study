@@ -21,7 +21,7 @@ const Speedrun: React.FC<QuizGameProps> = ({ flashcards, time, onQuit }) => {
     const [feedback, setFeedback] = useState<string>('');
     const [score, setScore] = useState<number>(0);
     const [incorrect, setIncorrect] = useState<number>(0);
-    const [timer, setTimer] = useState<number>(20);
+    const [timer, setTimer] = useState<number>(0);
     const [answered, setAnswered] = useState<boolean>(false);
     const [refresh, setRefresh] = useState<boolean>(false);
     const [showResults, setShowResults] = useState(false);
@@ -35,7 +35,7 @@ const Speedrun: React.FC<QuizGameProps> = ({ flashcards, time, onQuit }) => {
       <div className = "border-2 border-gray-200 rounded-2xl p-6 sm:p-8 md:p-10 max-w-5xl mx-auto">
         <div className="p-6 space-y-6">
           <h2 className = "text-2xl text-left font-bold">Speedrun Complete!</h2>
-          <h2 className = "text-lg font-medium">Ammount correct: {score}</h2>
+          <h2 className = "text-lg font-medium">Amount correct: {score}</h2>
           <h2 className = "text-lg font-medium">Amount incorrect: {incorrect}</h2>
           <button 
             onClick={reset}
@@ -89,7 +89,7 @@ const Speedrun: React.FC<QuizGameProps> = ({ flashcards, time, onQuit }) => {
         if (timer === 0) {
             setFeedback(`Time's up!`);
             setAnswered(true);
-            
+            setShowResults(true);
         }
     }, [timer]);
 
@@ -124,7 +124,6 @@ const Speedrun: React.FC<QuizGameProps> = ({ flashcards, time, onQuit }) => {
       setFeedback("Correct!");
       setScore(score + 1);
     } else {
-      console.log("cat");
       setFeedback(`Incorrect. The answer was: ${shuffledFlashcards[current].answer}`);
       setIncorrect(incorrect + 1);
     }

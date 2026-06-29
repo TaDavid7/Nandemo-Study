@@ -47,7 +47,7 @@ export default function AccountPage(){
     if(user){
         return(
             <div className = "p-6">
-                <h1 className = "text-2xl font-bond">Welcome, {user}!</h1>
+                <h1 className = "text-2xl font-bold">Welcome, {user}!</h1>
                 <p className = "mt-2">You're logged in</p>
                 <button
                     onClick = {logout}
@@ -61,7 +61,7 @@ export default function AccountPage(){
 
     return(
         <div className = "p-6 max-w-md mx-auto">
-            <h1 className = "text-2xl font-bond mb-4">
+            <h1 className = "text-2xl font-bold mb-4">
                 {mode === "login" ? "Login" : "Register"}
             </h1>
             {error && <div className = "text-red-500 mb-3">{error}</div>}

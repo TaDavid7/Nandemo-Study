@@ -203,10 +203,11 @@ export default function Home() {
 
   // Delete a flashcard
   const handleDelete = (id: string) => {
-    increaseIndex(cardindex);
-    authfetch(`/api/flashcards/${id}`, { method: "DELETE" }).then(() =>
-      setFlashcards(flashcards.filter((card) => card._id !== id))
-    );
+    authfetch(`/api/flashcards/${id}`, { method: "DELETE" }).then(() => {
+      const newCards = flashcards.filter((card) => card._id !== id);
+      if (cardindex >= newCards.length) setCardIndex(Math.max(0, newCards.length - 1));
+      setFlashcards(newCards);
+    });
   };
 
   // Delete a folder
