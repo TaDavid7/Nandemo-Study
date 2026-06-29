@@ -1,507 +1,63 @@
-// backend/app.js
 require("dotenv").config();
 const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const { Server } = require("socket.io");
+const jwt = require("jsonwebtoken");
 
-const Folder = require("./models/Folder");
-const Flashcard = require("./models/Flashcard");
+const authRoutes = require("./routes/auth");
+const folderRoutes = require("./routes/folders");
+const flashcardRoutes = require("./routes/flashcards");
+const dailyRoutes = require("./routes/daily");
 const attachVersus = require("./sockets/versus");
 
-const jwt = require("jsonwebtoken");
-const User = require("./models/User");
-
-const auth = require("./middleware/auth");
-
-const multer = require("multer");
-const pdfParse = require("pdf-parse");
-
-const UsageLog = require("./models/UsageLog");
-
-function getTodayDateOnly(){
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-
-//check
-// --- Express
 const app = express();
 app.use(express.json());
 
-const upload = multer({ 
-  storage: multer.memoryStorage() ,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB
-});
+// --- CORS
 
-async function generateFlashcardsFromTextWithAI(rawText) {
-  const MAX_CHARS = 2000; //faster
-  let text = (rawText || "").trim();
-  if (!text) {
-    throw new Error("No text provided to AI");
-  }
-  if (text.length > MAX_CHARS) {
-    text = text.slice(0, MAX_CHARS);
-  }
-
-  const systemPrompt = `
-You are a study assistant that turns class notes into clear Q&A flashcards.
-
-Rules:
-- Focus on key concepts, definitions, formulas, and important facts.
-- Questions must be short and specific.
-- Answers must be concise but correct.
-- Avoid duplicates and trivial facts.
-- Aim for 10–25 cards if the notes are long enough.
-- Respond with JSON ONLY in this exact format:
-
-{
-  "cards": [
-    { "question": "Question 1?", "answer": "Answer 1." },
-    { "question": "Question 2?", "answer": "Answer 2." }
-  ]
-}
-`.trim();
-
-  const userPrompt = `
-Here are the notes:
-
-"""${text}"""
-
-Turn these notes into high-quality flashcards.
-`.trim();
-
-  // Call AI
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { 
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-3.5-turbo",
-      temperature: 0.5, 
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    console.error("AI error:", errorText);
-    throw new Error(" requesAIt failed");
-  }
-
-  const data = await response.json();
-
-  // AI's /api/chat response structure:
-  // { message: { role: "assistant", content: "..." }, ... }
-  const content =
-    data?.message?.content ||
-    data?.choices?.[0]?.message?.content ||
-    "";
-
-  let jsonText = content.trim();
-  const fenced = jsonText.match(/```json([\s\S]*?)```/i);
-  if (fenced) {
-    jsonText = fenced[1].trim();
-  } else {
-    const braceMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (braceMatch) {
-      jsonText = braceMatch[0];
-    }
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(content);
-  } catch (e) {
-    console.error("Failed to parse AI JSON:", content);
-    let relaxed = jsonText
-      .replace(/""([^"]*?)""/g, "'$1'")      // inner double-quotes -> single quotes
-      .replace(/,\s*([}\]])/g, "$1");       // trailing commas
-
-    try {
-      parsed = JSON.parse(relaxed);
-    } catch (e2) {
-      console.error("Relaxed JSON parse also failed:", relaxed);
-      throw new Error("AI output was not valid JSON");
-    }
-  }
-
-  const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
-  return cards
-    .filter(
-      (c) =>
-        c &&
-        typeof c.question === "string" &&
-        typeof c.answer === "string" &&
-        c.question.trim() &&
-        c.answer.trim()
-    )
-    .map((c) => ({
-      question: c.question.trim(),
-      answer: c.answer.trim(),
-    }));
-}
-app.post("/api/flashcards/import/pdf", auth, upload.single("file"), async (req, res) => {
-  try{
-    const today = getTodayDateOnly();
-    const log = await UsageLog.findOne({userId: req.user._id, date: today});
-    if(log && log.count >= 5){
-      return res.status(429).json({error: "Daily PDF import limit reached (5 per day)."});
-    }
-    const {folderId} = req.body;
-    if(!folderId){
-      return res.status(400).json({error: "folderId is required"});
-    }
-    if(!req.file){
-      return res.status(400).json({error: "PDF file is required"});
-    }
-
-    const folder = await Folder.findOne({_id: folderId, user: req.user._id});
-    if(!folder){
-      return res.status(404).json({error: "Folder not found"});
-    }
-    const pdfData = await pdfParse(req.file.buffer);
-    const text = pdfData.text;
-    if(!text || !text.trim()){
-      return res.status(400).json({error: "Please try importing a pdf where you can select/copy text"});
-    }
-    const cards = await generateFlashcardsFromTextWithAI(text);
-    await UsageLog.updateOne(
-      {userId: req.user._id, date: today},
-      {$inc: {count: 1}},
-      {upsert: true}
-    );
-    if(cards.length === 0){
-      return res.status(500).json({error: "No flashcards generated from PDF"});
-    }
-
-    const docsToCreate = cards.map(c => ({
-      question: c.question,
-      answer: c.answer,
-      folder: folder._id,
-      user: req.user._id,
-    }));
-    const created = await Flashcard.insertMany(docsToCreate);
-    return res.json({ createdCount: created.length, cards: created });
-  } catch(err){
-    console.error("PDF import error:", err);
-    return res.status(500).json({error: "Server error: " + err.message});
-  }
-});
-
-//hellpers
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
-function addDays(d, days){const x = new Date(d); x.setDate(x.getDate() + days); return x;}
-
-function todayBounds(now = new Date()){
-  const start = new Date(now);
-  start.setHours(0,0,0,0);
-  const end = new Date(now);
-  end.setHours(23,59,59,999);
-  return {start, end};
-}
-
-/**
- * Modified SM-2 transition.
- * grade: 0=Again, 1=Hard, 2=Good, 3=Easy
- * returns shallow update { ease, interval, reps, lapses, due, lastReviewedAt }
- */
-function nextSchedule(card, grade, now = new Date()) {
-  let { ease = 2.5, interval = 0, reps = 0, lapses = 0 } = card;
-  if(grade === 0) ease -= 0.2;
-  else if(grade === 1) ease -= 0.15;
-  else if(grade === 3) ease += 0.15;
-  ease = clamp(ease, 1.3, 3.0);
-
-  if (grade === 0) {
-    reps = 0;
-    interval = 1;
-    lapses += 1;
-  } else if(reps === 0){
-    reps = 1;
-    interval = 1;
-  } else if(reps === 1){
-    reps = 2;
-    interval = 6;
-  } else {
-    reps += 1;
-    interval = Math.max(1, Math.round(interval * ease));
-  }
-  return {
-    ease,
-    interval,
-    reps,
-    lapses,
-    due: addDays(now, interval),
-    lastReviewedAt: now,
-  };
-}
-
-const MAX_REVIEW = 60;
-const MAX_NEW = 20;
-
-
-// Build allowed origins list from env
-// kojo
 const allowed = (process.env.CORS_ORIGIN || "")
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
-// CORS middleware: allow listed origins AND no-origin requests (curl/health)
+// Allow listed origins and no-origin requests
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // server-to-server / curl / health checks
+      if (!origin) return cb(null, true);
       return cb(null, allowed.includes(origin));
     },
     credentials: true,
   })
 );
 
+// --- Routes
+
 app.get("/", (_req, res) => res.status(200).send("API OK"));
-
-app.get("/api/folders", auth, async (req, res) => {
-  try {
-    const folders = await Folder.find({user: req.user._id}).sort({ name: 1 }).lean();
-    res.json(folders);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/daily", auth, async (req, res) => {
-  try {
-    const scheduled = await Folder.find({ user: req.user._id, schedule: true })
-      .select("_id name").sort({ name: 1 }).lean();
-    const folderIds = scheduled.map(f => f._id);
-    const { end: endOfToday } = todayBounds();
-    const baseMatch = { user: req.user._id };
-    if (folderIds.length) baseMatch.folder = { $in: folderIds };
-
-    const review = await Flashcard.find({
-      ...baseMatch,
-      due: { $lte: endOfToday },
-      reps: { $gte: 0 }, 
-    })
-      .select("_id question answer folder ease interval reps lapses due")
-      .sort({ due: 1, _id: 1 })
-      .limit(MAX_REVIEW)
-      .lean();
-
-    // New cards (reps == 0)
-    const news = await Flashcard.find({
-      ...baseMatch,
-      reps: 0,
-    })
-      .select("_id question answer folder ease interval reps lapses due")
-      .limit(MAX_NEW)
-      .lean();
-    res.json({review, news});
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post("/api/review", auth, async (req, res) => {
-  try {
-    const { cardId, grade } = req.body || {};
-    if (!cardId || ![0,1,2,3].includes(grade)) {
-      return res.status(400).json({ error: "cardId and grade (0..3) required" });
-    }
-
-    // fetch minimal fields needed for scheduling
-    const card = await Flashcard.findOne(
-      { _id: cardId, user: req.user._id },
-      "ease interval reps lapses due"
-    );
-    if (!card) return res.status(404).json({ error: "not found" });
-
-    const updates = nextSchedule(card, grade, new Date());
-    Object.assign(card, updates);
-    await card.save();
-
-    // return lightweight payload
-    res.json({
-      _id: card._id,
-      ease: card.ease,
-      interval: card.interval,
-      reps: card.reps,
-      lapses: card.lapses,
-      due: card.due,
-      lastReviewedAt: card.lastReviewedAt
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post("/api/folders", auth, async (req, res) => {
-  try {
-    const name = String(req.body?.name || "").trim();
-    if (!name) return res.status(400).json({ error: "name is required" });
-    const folder = await Folder.create({ name, user: req.user._id }); // {name} same as {name: name}
-    res.status(201).json(folder); //returns folder
-  } catch (e) {
-    if (e.code === 11000) return res.status(409).json({ error: "folder exists" });
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post("/api/register", async(req, res) => {
-  try{
-    const{username, password} = req.body;
-    if(!username?.trim() || !password?.trim()){
-      return res.status(400).json({error:"Username and password required"});
-    }
-
-    const exists = await User.findOne({username});
-    if(exists){
-      return res.status(409).json({error:"Username exists already"});
-    }
-
-    const user = new User({username, password});
-    await user.save();
-
-    const token = jwt.sign({userId: user._id}, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
-    res.status(201).json({token, username: user.username});
-  } catch(err){
-    res.status(500).json({error: "Server error: " + err.message})
-  }
-});
-
-app.post("/api/login", async(req, res) => {
-  try{
-    const {username, password} = req.body;
-    const user = await User.findOne({username});
-    if(!user || !(await user.comparePassword(password))){
-      return res.status(401).json({error: "invalid credentials"});
-    }
-
-    const token = jwt.sign({userId: user._id}, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
-    res.json({token, username: user.username});
-  } catch(err){
-    res.status(500).json({error: "Server error"});
-  }
-});
-app.patch("/api/folders/:id", auth, async (req, res) => {
-  try {
-    const {name, schedule} = req.body || {};
-    const update = {};
-    if (typeof name === "string" && name.trim() !== "") {
-      update.name = name.trim();
-    }
-    if ("schedule" in req.body) {
-      update.schedule = !!req.body.schedule;
-    }
-    if (Object.keys(update).length === 0) {
-      return res.status(400).json({ error: "No valid fields to update" });
-    }
-    const updated = await Folder.findByIdAndUpdate(
-      {_id: req.params.id, user: req.user._id}, //finds by id
-      update,
-      { new: true }   //returns new folder instead of old one
-    );
-    if (!updated) return res.status(404).json({ error: "not found" });
-    res.json(updated);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.delete("/api/folders/:id", auth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    await Flashcard.deleteMany({ folder: id, user: req.user._id});
-    const del = await Folder.findByIdAndDelete({_id: id, user: req.user._id});
-    if (!del) return res.status(404).json({ error: "not found" });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/flashcards", auth, async (req, res) => {
-  try {
-    const q = {};
-    if (req.query.folderId) q.folder = req.query.folderId;
-    q.user = req.user._id;
-    const cards = await Flashcard.find(q).sort({ _id: 1 }).lean();
-    res.json(cards);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post("/api/flashcards", auth, async (req, res) => {
-  try {
-    const { question, answer, folder } = req.body || {};
-    if (!question || !answer || !folder)
-      return res
-        .status(400)
-        .json({ error: "question, answer, folder required" });
-    const card = await Flashcard.create({ question, answer, folder, user: req.user._id });
-    res.status(201).json(card);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.patch("/api/flashcards/:id", auth, async (req, res) => {
-  try {
-    const { question, answer, folder } = req.body || {};
-    const card = await Flashcard.findByIdAndUpdate(
-      {_id: req.params.id, user: req.user._id},
-      {
-        ...(question && { question }),
-        ...(answer && { answer }),
-        ...(folder && { folder }),
-      },
-      { new: true } // return updated doc
-    );
-    if (!card) return res.status(404).json({ error: "not found" });
-    res.json(card);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.delete("/api/flashcards/:id", auth, async (req, res) => {
-  try {
-    const del = await Flashcard.findByIdAndDelete({_id: req.params.id, user: req.user._id});
-    if (!del) return res.status(404).json({ error: "not found" });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+app.use("/api", authRoutes);
+app.use("/api/folders", folderRoutes);
+app.use("/api/flashcards", flashcardRoutes);
+app.use("/api", dailyRoutes);
 
 // --- DB
+
 const MONGO_URL = process.env.MONGO_URL;
-if (!MONGO_URL && process.env.NODE_ENV !== 'test' ) {
+if (!MONGO_URL && process.env.NODE_ENV !== "test") {
   console.error("MONGO_URL is missing");
   process.exit(1);
 }
 
-if(process.env.NODE_ENV !== 'test'){
-    mongoose
+if (process.env.NODE_ENV !== "test") {
+  mongoose
     .connect(MONGO_URL, { serverSelectionTimeoutMS: 8000 })
     .then(() => console.log("Mongo connected"))
-    .catch((err) => {
-        console.error("Mongo connection error:", err?.message || err);});
+    .catch((err) => console.error("Mongo connection error:", err?.message || err));
 }
+
 // --- HTTP + Socket.IO
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -514,12 +70,10 @@ const io = new Server(server, {
 
 io.use((socket, next) => {
   try {
-    // Prefer auth field from client
     const token =
       socket.handshake.auth?.token ||
       (socket.handshake.headers?.authorization || "").replace(/^Bearer\s+/i, "");
     if (!token) return next(new Error("Unauthorized"));
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.data.userId = decoded.userId;
     next();
@@ -528,22 +82,18 @@ io.use((socket, next) => {
   }
 });
 
-
 attachVersus(io);
 
 // --- Start
+
 const PORT = process.env.PORT || 5000;
-if(process.env.NODE_ENV !== 'test'){
-    server.listen(PORT, () => {
-        console.log(`Server listening on port ${PORT}`);
-    });
+if (process.env.NODE_ENV !== "test") {
+  server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 }
 
-
-// graceful shutdown
 process.on("SIGINT", async () => {
   await mongoose.connection.close();
   server.close(() => process.exit(0));
 });
 
-module.exports = {app, server};
+module.exports = { app, server };

@@ -1,0 +1,101 @@
+# ADR 0001: Offline-read-only with IndexedDB as a local read cache
+
+- **Status:** Accepted by me ;)
+- **Date:** 2026-06-28
+- **Deciders:** David T.
+
+## Context
+
+The flashcard app should let users study offline on any device, whether it be phones, tablets, or desktop browsers. Right now the client reads and writes directly to MongoDB through the API, so the app is unusable without a network connection.
+
+Two capabilities were initially considered. offline studying and offline editing. Offline editing requires a full sync layer (reconciling competing edits from multiple devices), which brings a lot of complexity, such as conflict resolution, and tombstones. Data portability via local `.md` files was also considered but is not a goal.
+
+The decision is how much offline capability to support in the first version, and where the copy of data lives.
+
+## Decision
+
+Adopt offline-read-only. MongoDB remains the single source of truth. IndexedDB (via Dexie.js) is used as a local read cache so that studying works with no connection. localStorage would be too small for a big card library.
+
+- **Reads** (studying, browsing cards): served from IndexedDB first, refreshed from the server when online.
+- **Writes** (creating, editing, deleting cards): require a network connection and go to the server. The local cache is updated to match after a successful write.
+- When offline, the app is in a read-only state for card content, the UI should indicate this clearly
+
+
+### Data flow
+
+- On load (online): fetch the user's cards from the server, write them into IndexedDB, render from IndexedDB.
+- On load (offline): render from whatever is in IndexedDB; disable editing.
+- On edit (online only): write to the server, then update IndexedDB to reflect the server's response.
+- A service worker caches the app shell so the app itself loads offline.
+
+### Data model
+
+**Dexie table "cards"**
+
+| Field | Purpose |
+|---|---|
+| `id` | Server-assigned card identifier. |
+| `folderId` | Foreign key to the folders table. |
+| `question`, `answer` | Card content. |
+| `due` | When the card is next due; drives the daily queue offline. |
+| `ease`, `interval`, `reps`, `lapses` | SM-2 state, kept so the offline view is consistent with the server. |
+| `lastReviewedAt` | Last review timestamp. |
+| `cachedAt` | Epoch ms when this copy was last refreshed from the server. |
+
+**Dexie table "folders"**
+
+| Field | Purpose |
+|---|---|
+| `id` | Server-assigned folder identifier. |
+| `name` | Display name. |
+| `schedule` | Whether the folder is included in the daily review queue. |
+| `cachedAt` | Epoch ms when this copy was last refreshed from the server. |
+
+No `dirty`, `deleted`, or `updatedAt`-based conflict fields are needed — there are no offline writes to reconcile.
+
+## Options considered
+
+### Option A — Server-only, no offline 
+
+- **Pros:** Simplest possible; one source of truth; no local store.
+- **Cons:** Unusable offline
+
+### Option B — Offline-read-only with a local read cache (chosen)
+
+- **Pros:** Studying works offline on every device. MongoDB stays the single source of truth, so there is no conflict resolution. Significantly less to build and test than a full sync layer. Every device gets an identical experience.
+- **Cons:** Editing requires a connection — users cannot create or change cards offline. The local store can be stale until the next online refresh. No data portability (no local files).
+
+### Option C — Full offline-first with bidirectional sync
+
+IndexedDB as the source of truth, edits queued offline and reconciled to MongoDB with last-write-wins.
+
+- **Pros:** Full offline editing; instant local reads and writes.
+- **Cons:** Requires a real sync. May be revisited if offline editing is worth it
+
+### Storage substrate sub-decision
+
+`localStorage` was rejected for card data (~5–10 MB ceiling, string-only, synchronous, no indexing). IndexedDB via Dexie is chosen for its capacity and indexing
+
+## Consequences
+
+### Positive
+
+- Users can study fully offline on any device, which meets the primary goal.
+- One source of truth (MongoDB) keeps the system simple to reason about and debug.
+- conflict resolution are avoided entirely.
+- One codebase, identical behaviour across all platforms
+- Markedly smaller build and test effort than a full sync layer, so the feature is realistic to finish.
+
+### Negative / accepted trade-offs
+
+- **No offline editing.** Creating, editing, and deleting cards require a connection. This is a deliberate trade to avoid sync complexity in the first version.
+- **Cached data can be stale.** Cards may be out of date until the next online refresh; the UI should indicate when data was last updated if staleness matters.
+- **No data portability.** Cards are not stored as user owned files.
+- **Real-time multiplayer remains online-only** by nature
+
+### Follow-ups
+
+- Implement the service worker for app-shell caching and installability 
+- Define the cache refresh strategy: when to re-fetch and how to show "last updated".
+- Decide how the UI communicates the offline read-only state.
+- Revisit Option C (full offline-first sync) if users need to edit offline
