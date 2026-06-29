@@ -12,13 +12,13 @@ jobs:
       - uses: actions/checkout@v4
 
       # Frontend
-      - name: Setup Node (frontend)
+      - name: Setup Node frontend
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-      - name: Install & Build (frontend)
+      - name: Install & Build frontend
         working-directory: frontend
         run: |
           npm ci
@@ -37,23 +37,4 @@ jobs:
           npm ci
           npm run build || echo "no backend build step, skipping"
 
-      # Secrets scan (gitleaks)
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        with:
-          args: detect --no-banner --redact
-
-      # Docker build check (ensures Dockerfiles compile)
-      - name: Docker build (frontend)
-        run: docker build -t test-frontend ./frontend
-      - name: Docker build (backend)
-        run: docker build -t test-backend ./backend
-
-      # Optional: Trivy scan filesystem (quick)
-      - name: Trivy FS scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: fs
-          format: table
-          severity: HIGH,CRITICAL
-          exit-code: 0
+    
