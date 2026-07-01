@@ -60,21 +60,27 @@ export default function CreateRoomPage() {
     socket.on("roomState", onRoomState);
   }
 
+  const inputClass = `w-full rounded-xl border border-slate-300 dark:border-slate-600
+    px-3 py-2 text-sm bg-white dark:bg-slate-700
+    text-slate-800 dark:text-slate-100
+    placeholder-slate-400 dark:placeholder-slate-500
+    focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition`;
+
   return (
     <div className="mx-auto max-w-xl p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Create a room</h1>
+      <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Create a room</h1>
 
       {error && (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
 
-      <div className="rounded-2xl border bg-white p-6 space-y-5 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 space-y-5 shadow-sm">
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-slate-700">Display name</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Display name</label>
           <input
-            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className={inputClass}
             placeholder="Enter your name…"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -82,17 +88,15 @@ export default function CreateRoomPage() {
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-slate-700">Folder</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Folder</label>
           <select
-            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className={inputClass}
             value={folderId}
             onChange={(e) => setFolderId(e.target.value)}
           >
             <option value="">Select a folder…</option>
             {folders.map((f) => (
-              <option key={f._id} value={f._id}>
-                {f.name}
-              </option>
+              <option key={f._id} value={f._id}>{f.name}</option>
             ))}
           </select>
         </div>
@@ -100,7 +104,7 @@ export default function CreateRoomPage() {
         <button
           onClick={onCreate}
           disabled={!username.trim() || !folderId || loading}
-          className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? "Creating…" : "Create room"}
         </button>

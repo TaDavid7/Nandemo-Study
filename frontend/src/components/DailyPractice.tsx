@@ -50,20 +50,6 @@ export default function DailyPractice() {
     [review.length, news.length]
   );
 
-  const pickNext = (prevWasNew: boolean): Card | null => {
-    if (review.length && (!prevWasNew || Math.random() < 0.75)) {
-      const [c, ...rest] = review;
-      setReview(rest);
-      return c;
-    }
-    if (news.length) {
-      const [c, ...rest] = news;
-      setNews(rest);
-      return c;
-    }
-    return null;
-  };
-
   const grade4 = async (gradeValue: 0 | 1 | 2 | 3) => {
     if (!current) return;
 
@@ -103,26 +89,23 @@ export default function DailyPractice() {
     }
   };
 
-
-
-
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[60vh] text-gray-500">
+      <div className="flex justify-center items-center min-h-[60vh] text-slate-500 dark:text-slate-400">
         Loading daily practice...
       </div>
     );
   }
 
   if (err) {
-    return <div className="p-6 text-red-600">{err}</div>;
+    return <div className="p-6 text-red-600 dark:text-red-400">{err}</div>;
   }
 
   if (!current) {
     return (
       <div className="p-6 max-w-xl mx-auto text-center space-y-2">
-        <h2 className="text-2xl font-semibold">All done for today 🎉</h2>
-        <p className="text-sm opacity-70">Come back tomorrow for more.</p>
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">All done for today</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Come back tomorrow for more.</p>
       </div>
     );
   }
@@ -130,23 +113,18 @@ export default function DailyPractice() {
   return (
     <div className="max-w-md mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">Remaining: {remaining}</div>
+        <div className="text-sm text-slate-500 dark:text-slate-400">Remaining: {remaining}</div>
         <button
-          className="text-sm text-indigo-600 hover:underline"
+          className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
           onClick={() => setFlipped(f => !f)}
         >
           {flipped ? "Hide answer" : "Show answer"}
         </button>
       </div>
 
-      {/* Flashcard Flip Animation */}
-      
       <motion.div
-        className={`relative h-64 rounded-2xl border shadow-lg bg-white flex flex-col items-center justify-center cursor-pointer`}
-        style={{
-          transformStyle: "preserve-3d",
-          perspective: 1000,
-        }}
+        className="relative h-64 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg bg-white dark:bg-slate-800 flex flex-col items-center justify-center cursor-pointer"
+        style={{ transformStyle: "preserve-3d", perspective: 1000 }}
         animate={{ rotateY: flipped ? 180 : 0 }}
         transition={{ duration: 0.35, ease: "easeInOut" }}
         onClick={() => setFlipped(f => !f)}
@@ -155,43 +133,41 @@ export default function DailyPractice() {
           className="absolute inset-0 flex flex-col items-center justify-center backface-hidden px-4"
           style={{ transform: "rotateY(0deg)" }}
         >
-          <div className="text-xs uppercase text-gray-400 mb-2">Question</div>
-          <div className="text-lg font-semibold text-center">{current.question}</div>
+          <div className="text-xs uppercase text-slate-400 dark:text-slate-500 mb-2">Question</div>
+          <div className="text-lg font-semibold text-center text-slate-800 dark:text-slate-100">{current.question}</div>
         </div>
 
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center backface-hidden px-4 bg-indigo-50"
+          className="absolute inset-0 flex flex-col items-center justify-center backface-hidden px-4 bg-indigo-50 dark:bg-indigo-900/40 rounded-2xl"
           style={{ transform: "rotateY(180deg)" }}
         >
-          <div className="text-xs uppercase text-gray-400 mb-2">Answer</div>
-          <div className="text-lg text-center">{current.answer}</div>
+          <div className="text-xs uppercase text-slate-400 dark:text-slate-500 mb-2">Answer</div>
+          <div className="text-lg text-center text-slate-800 dark:text-slate-100">{current.answer}</div>
         </div>
       </motion.div>
 
-
-      {/* Grading buttons */}
       <div className="grid grid-cols-4 gap-3">
         <button
           onClick={() => grade4(0)}
-          className="rounded-xl px-3 py-2 border border-red-300 bg-red-50 hover:bg-red-100 text-sm"
+          className="rounded-xl px-3 py-2 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 text-sm text-red-700 dark:text-red-400 transition"
         >
           Again
         </button>
         <button
           onClick={() => grade4(1)}
-          className="rounded-xl px-3 py-2 border border-yellow-300 bg-yellow-50 hover:bg-yellow-100 text-sm"
+          className="rounded-xl px-3 py-2 border border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 text-sm text-yellow-700 dark:text-yellow-400 transition"
         >
           Hard
         </button>
         <button
           onClick={() => grade4(2)}
-          className="rounded-xl px-3 py-2 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-sm"
+          className="rounded-xl px-3 py-2 border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-sm text-emerald-700 dark:text-emerald-400 transition"
         >
           Good
         </button>
         <button
           onClick={() => grade4(3)}
-          className="rounded-xl px-3 py-2 border border-blue-300 bg-blue-50 hover:bg-blue-100 text-sm"
+          className="rounded-xl px-3 py-2 border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-sm text-blue-700 dark:text-blue-400 transition"
         >
           Easy
         </button>

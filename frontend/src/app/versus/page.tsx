@@ -19,43 +19,39 @@ function ArrowRightIcon() {
 
 export default function VersusLanding() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-10">
+    <div>
+      <div className="mb-8">
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Versus</h1>
+        <p className="mt-2 text-slate-600 dark:text-slate-400 max-w-xl">
+          Challenge friends to a live flashcard battle. Pick a folder, create or join a room,
+          and race to answer correctly — every point counts.
+        </p>
+      </div>
 
-        <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Versus</h1>
-          <p className="mt-2 text-slate-600 max-w-xl">
-            Challenge friends to a live flashcard battle. Pick a folder, create or join a room,
-            and race to answer correctly — every point counts.
-          </p>
+      <div className="rounded-2xl shadow-md bg-white dark:bg-slate-800 ring-1 ring-black/5 dark:ring-white/10 p-6 sm:p-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Link
+            href="/versus/create"
+            className="group rounded-2xl border border-slate-200 dark:border-slate-700 p-6 hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-700 transition-all"
+          >
+            <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 p-3 text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/50 transition-colors">
+              <PlusIcon />
+            </div>
+            <div className="text-xl font-semibold text-slate-900 dark:text-white">Create room</div>
+            <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick a folder and host the match.</div>
+          </Link>
+
+          <Link
+            href="/versus/join"
+            className="group rounded-2xl border border-slate-200 dark:border-slate-700 p-6 hover:shadow-md hover:border-emerald-200 dark:hover:border-emerald-700 transition-all"
+          >
+            <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-900/30 p-3 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/50 transition-colors">
+              <ArrowRightIcon />
+            </div>
+            <div className="text-xl font-semibold text-slate-900 dark:text-white">Join room</div>
+            <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter a code and jump in.</div>
+          </Link>
         </div>
-
-        <div className="rounded-2xl shadow-md bg-white ring-1 ring-black/5 p-6 sm:p-8">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Link
-              href="/versus/create"
-              className="group rounded-2xl border p-6 hover:shadow-md hover:border-indigo-200 transition-all"
-            >
-              <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-indigo-50 p-3 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
-                <PlusIcon />
-              </div>
-              <div className="text-xl font-semibold">Create room</div>
-              <div className="mt-1 text-sm text-slate-500">Pick a folder and host the match.</div>
-            </Link>
-
-            <Link
-              href="/versus/join"
-              className="group rounded-2xl border p-6 hover:shadow-md hover:border-emerald-200 transition-all"
-            >
-              <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-emerald-50 p-3 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
-                <ArrowRightIcon />
-              </div>
-              <div className="text-xl font-semibold">Join room</div>
-              <div className="mt-1 text-sm text-slate-500">Enter a code and jump in.</div>
-            </Link>
-          </div>
-        </div>
-
       </div>
     </div>
   );

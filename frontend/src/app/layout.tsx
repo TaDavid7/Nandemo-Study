@@ -1,17 +1,20 @@
 import "./globals.css";
 import AppShell from "@/components/TabNavigation";
+import { Providers } from "./providers";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Mem Study",
-  description: "Flashcards and study tools",
+  title: "Nandemo",
+  description: "Flashcards and spaced repetition",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <AppShell>{children}</AppShell>
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );
