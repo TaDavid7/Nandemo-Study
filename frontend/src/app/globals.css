@@ -14,7 +14,7 @@ html[data-mobile] {
   font-size: 16px;
 }
 
-/* Nandemo look: a study desk with index cards and a yellow highlighter.
+/* Tandemo look: a study desk with index cards and a yellow highlighter.
    Change colors here and every page follows. */
 :root {
   --desk: #e8ecf1;

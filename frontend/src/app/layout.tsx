@@ -5,7 +5,7 @@ import type { Metadata, Viewport } from "next";
 import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "Nandemo",
+  title: "Tandemo",
   description: "Flashcards and spaced repetition",
   manifest: "/manifest.webmanifest",
 };
