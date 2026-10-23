@@ -6,15 +6,8 @@
 ![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white)
 ![Socket.io](https://img.shields.io/badge/Socket.io-4-010101?logo=socket.io&logoColor=white)
 
-A full-stack flashcard learning platform with real-time multiplayer, speedrun mode, and spaced repetition tracking.
-
-> **Note:** Live demo temporarily offline — AWS EC2 free trial expired. See [Getting Started](#getting-started) to run locally.
-
----
-A screenshot from versus game mode
-
-<img width="684" height="470" alt="Screenshot 2026-06-28 215436" src="https://github.com/user-attachments/assets/25c6c97f-fc12-432e-80d7-946a0b313455" />
-
+Demo it here
+https://tandemo.org/
 
 ---
 
