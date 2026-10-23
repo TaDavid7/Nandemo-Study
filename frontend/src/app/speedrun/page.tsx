@@ -1,182 +1,258 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import Speedrun, { FlashcardType } from "@/components/speedrun";
-import { authfetch } from "@/lib/authfetch";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
+import Link from "next/link";
+import { Card, useCards, useFolders, useRequireAuth } from "@/lib/api";
+import { Button, Chip, PageHeader, Panel, inputClass } from "@/components/ui";
 
-type Folder = {
-  _id: string;
-  name: string;
-};
+const PRESETS = [30, 60, 120, 300];
+const MIN_CARDS = 5;
 
-const TIME_PRESETS = [
-  { label: "30 s", value: "30" },
-  { label: "1 min", value: "60" },
-  { label: "2 min", value: "120" },
-  { label: "5 min", value: "300" },
-  { label: "Custom", value: "custom" },
-];
+const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `${s}`);
 
-export default function QuizPage() {
-  const router = useRouter();
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState("");
-  const [flashcards, setFlashcards] = useState<FlashcardType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [time, setTime] = useState<string>("");
-  const [selectedPreset, setSelectedPreset] = useState<string>("");
-  const [customTime, setCustomTime] = useState<string>("");
-  const [gameReady, setGameReady] = useState(false);
+export default function SpeedrunPage() {
+  const signedIn = useRequireAuth();
+  const { folders, loading } = useFolders();
+  const [folderId, setFolderId] = useState("");
+  const { cards, loading: cardsLoading } = useCards(folderId);
+  const [seconds, setSeconds] = useState(60);
+  const [custom, setCustom] = useState("");
+  const [playing, setPlaying] = useState(false);
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) { router.push("/account"); return; }
-    authfetch("/api/folders")
-      .then(res => res.json())
-      .then(data => { if (Array.isArray(data)) setFolders(data); });
-  }, []);
+  if (!signedIn) return null;
 
-  useEffect(() => {
-    if (!selectedFolder) { setFlashcards([]); setLoading(false); return; }
-    setLoading(true);
-    authfetch(`/api/flashcards?folderId=${selectedFolder}`)
-      .then(res => res.json())
-      .then((cards: FlashcardType[]) => { setFlashcards(cards); setLoading(false); });
-  }, [selectedFolder]);
+  const time = custom ? Number(custom) : seconds;
+  const enoughCards = cards.length >= MIN_CARDS;
+  const ready = folderId && enoughCards && time > 0;
 
-  const handlePreset = (value: string) => {
-    setSelectedPreset(value);
-    if (value !== "custom") {
-      setTime(value);
-      setCustomTime("");
-    } else {
-      setTime("");
-    }
-  };
-
-  const handleCustomTime = (val: string) => {
-    setCustomTime(val);
-    setTime(val);
-  };
-
-  const exitingQuizGame = () => { setSelectedFolder(""); router.push("/home"); };
-
-  const selectedFolderName = folders.find(f => f._id === selectedFolder)?.name;
-  const isDisabled = !selectedFolder || !time || flashcards.length <= 4;
-  const notEnoughCards = selectedFolder && flashcards.length > 0 && flashcards.length <= 4;
-
-  if (gameReady) return <Speedrun flashcards={flashcards} time={time} onQuit={exitingQuizGame} />;
+  if (playing) return <Game cards={cards} seconds={time} onExit={() => setPlaying(false)} />;
 
   return (
-    <div className="max-w-xl">
-      {/* Hero */}
-      <div className="mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Speedrun</h1>
-        <p className="mt-2 text-slate-600 dark:text-slate-400">
-          Answer as many cards as you can before time runs out. The deck shuffles and recycles.
-        </p>
-      </div>
+    <div className="max-w-2xl">
+      <PageHeader title="Speedrun" sub="Type as many answers as you can before the clock runs out. The deck reshuffles when you reach the end." />
 
-      <div className="rounded-2xl bg-white dark:bg-slate-800 ring-1 ring-black/5 dark:ring-white/10 shadow-sm overflow-hidden">
-
-        {/* Step 1 — Folder */}
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-3">
-            Step 1 — Pick a folder
-          </p>
-          {folders.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No folders found. Create one on the Home page.</p>
+      <Panel className="divide-y divide-line">
+        <div className="p-6">
+          <h2 className="mb-4 font-semibold">Folder</h2>
+          {!loading && !folders.length ? (
+            <p className="text-muted">
+              No folders yet. <Link href="/home" className="text-ink underline underline-offset-4">Create one in Decks</Link>.
+            </p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {folders.map(folder => (
-                <button
-                  key={folder._id}
-                  onClick={() => setSelectedFolder(folder._id)}
-                  className={[
-                    "px-3.5 py-1.5 rounded-xl text-sm font-medium transition border",
-                    selectedFolder === folder._id
-                      ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
-                      : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800",
-                  ].join(" ")}
-                >
-                  {folder.name}
-                </button>
+              {folders.map((f) => (
+                <Chip key={f._id} active={folderId === f._id} onClick={() => setFolderId(f._id)}>{f.name}</Chip>
               ))}
             </div>
           )}
-          {notEnoughCards && (
-            <p className="mt-2 text-xs text-rose-500 dark:text-rose-400">
-              This folder only has {flashcards.length} card{flashcards.length === 1 ? "" : "s"} — needs more than 4.
-            </p>
-          )}
-          {selectedFolder && flashcards.length > 4 && (
-            <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
-              {flashcards.length} cards ready
-            </p>
-          )}
-        </div>
-
-        {/* Step 2 — Time */}
-        <div className="px-6 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-3">
-            Step 2 — Set a time limit
+          <p className="mt-3 h-5 text-sm">
+            {folderId && !cardsLoading && (enoughCards
+              ? <span className="text-good">{cards.length} cards ready</span>
+              : <span className="text-bad">This folder has {cards.length} card{cards.length === 1 ? "" : "s"}. Speedrun needs at least {MIN_CARDS}.</span>)}
           </p>
-          <div className="flex flex-wrap gap-2">
-            {TIME_PRESETS.map(preset => (
-              <button
-                key={preset.value}
-                onClick={() => handlePreset(preset.value)}
-                className={[
-                  "px-3.5 py-1.5 rounded-xl text-sm font-medium transition border",
-                  selectedPreset === preset.value
-                    ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
-                    : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800",
-                ].join(" ")}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          {selectedPreset === "custom" && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              transition={{ duration: 0.2 }}
-              className="mt-3"
-            >
-              <input
-                value={customTime}
-                onChange={e => handleCustomTime(e.target.value)}
-                placeholder="Seconds, e.g. 90"
-                autoFocus
-                className="w-44 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600
-                           bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100
-                           text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400
-                           placeholder-slate-400 dark:placeholder-slate-500 transition"
-              />
-            </motion.div>
-          )}
         </div>
 
-        {/* Start */}
-        <div className="px-6 pb-6">
-          <motion.button
-            whileHover={!isDisabled ? { scale: 1.01 } : {}}
-            whileTap={!isDisabled ? { scale: 0.98 } : {}}
-            disabled={isDisabled}
-            onClick={() => setGameReady(true)}
-            className="w-full py-3 rounded-xl bg-indigo-600 text-white font-semibold
-                       hover:bg-indigo-500 transition shadow-md shadow-indigo-100 dark:shadow-indigo-900/30
-                       disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
-          >
-            {selectedFolderName && time
-              ? `Start — ${selectedFolderName} · ${selectedPreset === "custom" ? `${customTime}s` : TIME_PRESETS.find(p => p.value === selectedPreset)?.label}`
-              : "Start Speedrun"}
-          </motion.button>
+        <div className="p-6">
+          <h2 className="mb-4 font-semibold">Time limit</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {PRESETS.map((p) => (
+              <Chip key={p} active={!custom && seconds === p} onClick={() => { setSeconds(p); setCustom(""); }}>
+                {p < 60 ? `${p} sec` : `${p / 60} min`}
+              </Chip>
+            ))}
+            <input
+              value={custom}
+              onChange={(e) => setCustom(e.target.value.replace(/\D/g, ""))}
+              placeholder="Custom (sec)"
+              className={`${inputClass} h-9 w-36 text-sm ${custom ? "border-hl" : ""}`}
+            />
+          </div>
+        </div>
+      </Panel>
+
+      <Button size="lg" className="mt-6 w-full" disabled={!ready} onClick={() => setPlaying(true)}>
+        {ready ? `Start · ${fmt(time)}${time < 60 ? " sec" : ""}` : "Pick a folder to start"}
+      </Button>
+    </div>
+  );
+}
+
+function shuffle<T>(arr: T[]) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function Game({ cards, seconds, onExit }: { cards: Card[]; seconds: number; onExit: () => void }) {
+  const [deck, setDeck] = useState(() => shuffle(cards));
+  const [i, setI] = useState(0);
+  const [left, setLeft] = useState(seconds);
+  const [guess, setGuess] = useState("");
+  const [right, setRight] = useState(0);
+  const [wrong, setWrong] = useState(0);
+  const [missed, setMissed] = useState<Card[]>([]);
+  const [reveal, setReveal] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+  const controls = useAnimationControls();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (over) return;
+    const id = setInterval(() => setLeft((t) => Math.max(0, t - 1)), 1000);
+    return () => clearInterval(id);
+  }, [over]);
+
+  useEffect(() => { if (left === 0) setOver(true); }, [left]);
+
+  const advance = () => {
+    setReveal(null);
+    setGuess("");
+    if (i === deck.length - 1) { setDeck(shuffle(cards)); setI(0); } else setI(i + 1);
+    inputRef.current?.focus();
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (over || reveal !== null || !guess.trim()) return;
+    const card = deck[i];
+    if (guess.trim().toLowerCase() === card.answer.trim().toLowerCase()) {
+      setRight((n) => n + 1);
+      controls.start({ scale: [1, 1.03, 1], transition: { duration: 0.25 } });
+      advance();
+    } else {
+      setWrong((n) => n + 1);
+      setMissed((m) => (m.some((c) => c._id === card._id) ? m : [...m, card]));
+      setReveal(card.answer);
+      controls.start({ x: [0, -10, 10, -6, 6, 0], transition: { duration: 0.35 } });
+      setTimeout(advance, 1100);
+    }
+  };
+
+  const restart = () => {
+    setDeck(shuffle(cards)); setI(0); setLeft(seconds); setRight(0); setWrong(0);
+    setMissed([]); setReveal(null); setGuess(""); setOver(false);
+  };
+
+  if (over) {
+    const accuracy = right + wrong ? Math.round((right / (right + wrong)) * 100) : 0;
+    return (
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-2xl">
+        <h1 className="font-card text-5xl">Time&apos;s up</h1>
+        <div className="mt-8 grid grid-cols-3 gap-3">
+          {[
+            { label: "Correct", value: right, cls: "text-good" },
+            { label: "Missed", value: wrong, cls: "text-bad" },
+            { label: "Accuracy", value: `${accuracy}%`, cls: "" },
+          ].map((s, k) => (
+            <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + k * 0.08 }}>
+              <Panel className="p-5">
+                <div className={`text-4xl font-bold tabular-nums ${s.cls}`}>{s.value}</div>
+                <div className="mt-1 text-sm text-muted">{s.label}</div>
+              </Panel>
+            </motion.div>
+          ))}
+        </div>
+
+        {missed.length > 0 && (
+          <div className="mt-8">
+            <h2 className="mb-3 font-semibold">Cards to review</h2>
+            <Panel className="divide-y divide-line">
+              {missed.map((c) => (
+                <div key={c._id} className="grid grid-cols-2 gap-4 px-4 py-3">
+                  <span>{c.question}</span>
+                  <span className="text-muted">{c.answer}</span>
+                </div>
+              ))}
+            </Panel>
+          </div>
+        )}
+
+        <div className="mt-8 flex gap-2">
+          <Button size="lg" onClick={restart}>Play again</Button>
+          <Button size="lg" variant="secondary" onClick={onExit}>Change settings</Button>
+        </div>
+      </motion.div>
+    );
+  }
+
+  const pct = (left / seconds) * 100;
+  const urgent = left <= 10;
+
+  return (
+    <div className="mx-auto max-w-[680px]">
+      <div className="mb-6 flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={() => setOver(true)}>Finish early</Button>
+        <div className="flex gap-5 text-sm tabular-nums">
+          <span className="text-good">{right} correct</span>
+          <span className="text-bad">{wrong} missed</span>
         </div>
       </div>
+
+      <div className="mb-8 flex items-center gap-5">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-line">
+          <motion.div
+            className={`h-full rounded-full ${urgent ? "bg-bad" : "bg-hl"}`}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 1, ease: "linear" }}
+          />
+        </div>
+        <motion.span
+          key={urgent ? left : "calm"}
+          initial={urgent ? { scale: 1.3 } : false}
+          animate={{ scale: 1 }}
+          className={`w-20 text-right text-3xl font-bold tabular-nums ${urgent ? "text-bad" : ""}`}
+        >
+          {fmt(left)}
+        </motion.span>
+      </div>
+
+      <motion.div animate={controls}>
+        <div
+          className={`index-card relative flex h-[260px] items-center justify-center rounded-xl border px-10 text-center shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)] transition-colors ${
+            reveal !== null ? "border-bad" : "border-line"
+          }`}
+        >
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={`${deck[i]?._id}-${i}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.15 }}
+              className="font-card text-3xl leading-snug"
+            >
+              {deck[i]?.question}
+            </motion.p>
+          </AnimatePresence>
+          <AnimatePresence>
+            {reveal !== null && (
+              <motion.p
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-x-0 bottom-5 text-center text-bad"
+              >
+                Answer: <span className="font-semibold">{reveal}</span>
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
+
+      <form onSubmit={submit} className="mt-6 flex gap-2">
+        <input
+          ref={inputRef}
+          autoFocus
+          value={guess}
+          onChange={(e) => setGuess(e.target.value)}
+          placeholder="Type the answer and press Enter"
+          className={`${inputClass} h-12 text-lg`}
+        />
+        <Button size="lg">Check</Button>
+      </form>
     </div>
   );
 }

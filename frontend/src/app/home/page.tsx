@@ -1,407 +1,507 @@
 "use client";
-import React, { useState, useEffect, FormEvent } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import Flashcard from "@/components/Flashcard";
-import { authfetch } from "@/lib/authfetch";
+import React, { FormEvent, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { api, authfetch, Card, Folder, useCards, useFolders, useRequireAuth } from "@/lib/api";
+import { Button, Field, FlipCard, Kbd, Modal, Notice, Panel, inputClass } from "@/components/ui";
 
-type Card = {
-  _id: string;
-  question: string;
-  answer: string;
-  folder: string;
-};
+type Dialog =
+  | { kind: "card"; card?: Card }
+  | { kind: "pdf" }
+  | { kind: "rename" }
+  | { kind: "deleteFolder" }
+  | { kind: "deleteCard"; card: Card }
+  | null;
 
-type Folder = {
-  _id: string;
-  name: string;
-};
+export default function DecksPage() {
+  const signedIn = useRequireAuth();
+  const { folders, setFolders, loading: foldersLoading } = useFolders();
+  const [folderId, setFolderId] = useState("");
+  const { cards, setCards, reload } = useCards(folderId);
+  const [index, setIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [flipped, setFlipped] = useState(false);
+  const [dialog, setDialog] = useState<Dialog>(null);
 
-const inputClass = `p-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100
-  placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none transition`;
+  const folder = folders.find((f) => f._id === folderId);
 
-export default function Home() {
-  const [flashcards, setFlashcards] = useState<Card[]>([]);
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editQuestion, setEditQuestion] = useState("");
-  const [editAnswer, setEditAnswer] = useState("");
-
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [selectedFolder, setSelectedFolder] = useState<string>("");
-  const [newFolder, setNewFolder] = useState("");
-
-  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [folderDropdownOpen, setFolderDropdownOpen] = useState<string | null>(null);
-
-  const [cardindex, setCardIndex] = useState(0);
-  const [slideDirection, setSlideDirection] = useState(1);
-
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [importStatus, setImportStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [importMessage, setImportMessage] = useState<string | null>(null);
+  // Remember the last folder and open it again next time.
+  useEffect(() => {
+    if (!folders.length || folderId) return;
+    const saved = localStorage.getItem("lastFolder");
+    setFolderId(folders.some((f) => f._id === saved) ? saved! : folders[0]._id);
+  }, [folders, folderId]);
 
   useEffect(() => {
-    if (!localStorage.getItem("token")) return;
-    authfetch(`/api/folders`)
-      .then((res) => res.json())
-      .then((data) => { if (Array.isArray(data)) setFolders(data); });
-  }, []);
+    if (folderId) localStorage.setItem("lastFolder", folderId);
+    setIndex(0);
+    setFlipped(false);
+  }, [folderId]);
 
+  const go = (step: number) => {
+    if (!cards.length) return;
+    setDirection(step);
+    setFlipped(false);
+    setIndex((i) => (i + step + cards.length) % cards.length);
+  };
+
+  // Keyboard: ← → to move, space to flip.
   useEffect(() => {
-    if (!selectedFolder) { setFlashcards([]); return; }
-    setCardIndex(0);
-    authfetch(`/api/flashcards?folderId=${selectedFolder}`)
-      .then((res) => res.json())
-      .then((cards: Card[]) => setFlashcards(cards));
-  }, [selectedFolder]);
+    const onKey = (e: KeyboardEvent) => {
+      if (dialog) return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowRight") go(1);
+      else if (e.key === "ArrowLeft") go(-1);
+      else if (e.key === " ") { e.preventDefault(); setFlipped((f) => !f); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
-  const handleAddFolder = (e: FormEvent) => {
-    e.preventDefault();
-    authfetch(`/api/folders`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newFolder }),
-    }).then(async (res) => {
-      if (!res.ok) { const data = await res.json(); setNewFolder(data.error || "Could not add folder"); return; }
-      const folder: Folder = await res.json();
-      setFolders(Array.isArray(folders) ? [...folders, folder] : [folder]);
-      setNewFolder("");
-    });
-  };
+  if (!signedIn) return null;
 
-  const handleAdd = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedFolder) return;
-    authfetch(`/api/flashcards`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, answer, folder: selectedFolder }),
-    })
-      .then((res) => res.json())
-      .then((newCard: Card) => setFlashcards([...flashcards, newCard]));
-    setQuestion("");
-    setAnswer("");
-  };
-
-  const handleImportPdf = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedFolder || !pdfFile) return;
-    setImportStatus("loading");
-    setImportMessage(null);
-    const formData = new FormData();
-    formData.append("file", pdfFile);
-    formData.append("folderId", selectedFolder);
-    authfetch(`/api/flashcards/import/pdf`, { method: "POST", body: formData })
-      .then(async (res) => {
-        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to import PDF"); }
-        return res.json();
-      })
-      .then(async (data) => {
-        const createdCount = data.createdCount ?? (Array.isArray(data.cards) ? data.cards.length : null);
-        return authfetch(`/api/flashcards?folderId=${selectedFolder}`)
-          .then((res) => res.json())
-          .then((cards: Card[]) => {
-            setFlashcards(cards);
-            setImportStatus("done");
-            setImportMessage(createdCount != null ? `Imported ${createdCount} flashcard${createdCount === 1 ? "" : "s"} from PDF.` : "Imported flashcards from PDF.");
-            setPdfFile(null);
-          });
-      })
-      .catch((err: any) => { setImportStatus("error"); setImportMessage(err.message || "Something went wrong while importing."); });
-  };
-
-  const handleEditStart = (id: string, question: string, answer: string) => {
-    setEditingId(id); setEditQuestion(question); setEditAnswer(answer);
-  };
-
-  const handleEditSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!editingId) return;
-    authfetch(`/api/flashcards/${editingId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: editQuestion, answer: editAnswer }),
-    })
-      .then((res) => res.json())
-      .then((updatedCard: Card) => {
-        setFlashcards(flashcards.map((card) => (card._id === editingId ? updatedCard : card)));
-        setEditingId(null); setEditQuestion(""); setEditAnswer("");
-      });
-  };
-
-  const handleEditCancel = () => { setEditingId(null); setEditQuestion(""); setEditAnswer(""); };
-
-  const handleRenameFolder = (e: FormEvent) => {
-    e.preventDefault();
-    if (!renamingFolderId) return;
-    authfetch(`/api/folders/${renamingFolderId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newFolderName }),
-    })
-      .then((res) => res.json())
-      .then((updatedFolder: Folder) => {
-        setFolders(folders.map((f) => (f._id === renamingFolderId ? updatedFolder : f)));
-        setRenamingFolderId(null); setNewFolderName("");
-      });
-  };
-
-  const handleDelete = (id: string) => {
-    authfetch(`/api/flashcards/${id}`, { method: "DELETE" }).then(() => {
-      const newCards = flashcards.filter((card) => card._id !== id);
-      if (cardindex >= newCards.length) setCardIndex(Math.max(0, newCards.length - 1));
-      setFlashcards(newCards);
-    });
-  };
-
-  const handleDeleteFolder = (id: string) => {
-    if (!window.confirm("Are you sure? This will delete the folder and all its flashcards.")) return;
-    authfetch(`/api/folders/${id}`, { method: "DELETE" })
-      .then((res) => res.json())
-      .then(() => {
-        setFolders(folders.filter((f) => f._id !== id));
-        if (selectedFolder === id) { setSelectedFolder(""); setFlashcards([]); }
-      });
-  };
-
-  const decreaseIndex = (length: number) => {
-    setSlideDirection(-1);
-    setCardIndex(cardindex <= 0 ? length - 1 : (l) => l - 1);
-  };
-
-  const increaseIndex = (length: number) => {
-    setSlideDirection(1);
-    setCardIndex(cardindex >= length - 1 ? 0 : (l) => l + 1);
-  };
-
-  const slideVariants = {
-    initial: (d: number) => ({ x: d * 220, opacity: 0 }),
-    animate: { x: 0, opacity: 1 },
-    exit: (d: number) => ({ x: d * -220, opacity: 0 }),
-  };
-
-  const selectedFolderName = folders.find(f => f._id === selectedFolder)?.name;
+  const current = cards[Math.min(index, cards.length - 1)];
 
   return (
-    <div>
-      {/* Hero */}
-      <div className="mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Home</h1>
-        <p className="mt-2 text-slate-600 dark:text-slate-400">Manage folders and study your flashcards in one place.</p>
-      </div>
+    <div className="grid grid-cols-[240px_1fr] gap-12">
+      <FolderSidebar
+        folders={folders}
+        loading={foldersLoading}
+        selected={folderId}
+        onSelect={setFolderId}
+        onCreated={(f) => { setFolders((all) => [...all, f]); setFolderId(f._id); }}
+      />
 
-      {/* Controls Panel */}
-      <div className="rounded-2xl bg-white dark:bg-slate-800 ring-1 ring-black/5 dark:ring-white/10 shadow-sm overflow-hidden">
-
-        {/* ── Section: Folders ── */}
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-            </svg>
-            <span className="text-xs font-semibold uppercase tracking-wide">Folders</span>
-          </div>
-          {selectedFolderName && (
-            <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-full px-2.5 py-0.5">
-              {selectedFolderName}
-            </span>
-          )}
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
-          {/* Folder select row */}
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={selectedFolder}
-              onChange={(e) => setSelectedFolder(e.target.value)}
-              className="flex-1 min-w-[160px] sm:max-w-xs rounded-xl border border-slate-300 dark:border-slate-600
-                         bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200
-                         px-3 py-2.5 text-sm focus:border-indigo-500 dark:focus:border-indigo-400
-                         focus:ring-2 focus:ring-indigo-500/20 outline-none appearance-none transition"
-            >
-              <option value="">Select a folder…</option>
-              {Array.isArray(folders) && folders.map((folder) => (
-                <option key={folder._id} value={folder._id}>{folder.name}</option>
-              ))}
-            </select>
-
-            {selectedFolder && (
-              <div className="relative">
-                <button
-                  aria-label="Folder actions"
-                  className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-lg leading-none transition"
-                  onClick={() => setFolderDropdownOpen(folderDropdownOpen === selectedFolder ? null : selectedFolder)}
-                >
-                  ⋮
-                </button>
-                {folderDropdownOpen === selectedFolder && (
-                  <div className="absolute left-0 mt-2 z-20 min-w-[140px] rounded-xl bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 dark:ring-white/10 p-1">
-                    <button
-                      className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
-                      onClick={() => { setRenamingFolderId(selectedFolder); setNewFolderName(folders.find(f => f._id === selectedFolder)?.name || ""); setFolderDropdownOpen(null); }}
-                    >Rename</button>
-                    <button
-                      className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-100 dark:hover:bg-slate-700 text-rose-600 dark:text-rose-400"
-                      onClick={() => { setFolderDropdownOpen(null); handleDeleteFolder(selectedFolder); }}
-                    >Delete</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Rename form */}
-          {renamingFolderId && (
-            <form onSubmit={handleRenameFolder} className="flex items-center gap-2">
-              <input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} required autoFocus className={`${inputClass} focus:ring-2 focus:ring-amber-500 flex-1 text-sm`} />
-              <button type="submit" className="px-3 py-2 rounded-xl bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 transition">Save</button>
-              <button type="button" onClick={() => setRenamingFolderId(null)} className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition">Cancel</button>
-            </form>
-          )}
-
-          {/* New folder form */}
-          <form onSubmit={handleAddFolder} className="flex gap-2">
-            <input value={newFolder} onChange={e => setNewFolder(e.target.value)} placeholder="New folder name…" required className={`${inputClass} focus:ring-2 focus:ring-indigo-500 flex-1 text-sm`} />
-            <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition shrink-0">
-              Add Folder
-            </button>
-          </form>
-        </div>
-
-        {/* ── Section: Cards ── */}
-        <div className="px-6 py-4 border-t border-b border-slate-100 dark:border-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-300">
-          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <rect x="2" y="5" width="20" height="14" rx="2" />
-            <path strokeLinecap="round" d="M2 10h20" />
-          </svg>
-          <span className="text-xs font-semibold uppercase tracking-wide">
-            {editingId ? "Edit Card" : "Add a Card"}
-          </span>
-          {flashcards.length > 0 && !editingId && (
-            <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">{flashcards.length} card{flashcards.length === 1 ? "" : "s"}</span>
-          )}
-        </div>
-
-        <div className="px-6 py-5">
-          {!selectedFolder && !editingId ? (
-            <p className="text-sm text-slate-400 dark:text-slate-500 italic">Select a folder above to add cards.</p>
-          ) : editingId ? (
-            <form onSubmit={handleEditSubmit} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
-              <input value={editQuestion} onChange={e => setEditQuestion(e.target.value)} placeholder="Question" required className={`${inputClass} focus:ring-2 focus:ring-amber-500 text-sm`} />
-              <input value={editAnswer} onChange={e => setEditAnswer(e.target.value)} placeholder="Answer" required className={`${inputClass} focus:ring-2 focus:ring-amber-500 text-sm`} />
-              <div className="flex gap-2">
-                <button type="submit" className="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 transition">Save</button>
-                <button type="button" onClick={handleEditCancel} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition">Cancel</button>
-              </div>
-            </form>
-          ) : (
-            <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
-              <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="Question" required className={`${inputClass} focus:ring-2 focus:ring-emerald-500 text-sm`} />
-              <input value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Answer" required className={`${inputClass} focus:ring-2 focus:ring-emerald-500 text-sm`} />
-              <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition">Add Card</button>
-            </form>
-          )}
-        </div>
-
-        {/* ── Section: Import PDF ── */}
-        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-300">
-          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
-          <span className="text-xs font-semibold uppercase tracking-wide">Import from PDF</span>
-          <span className="ml-1 text-xs font-medium text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 rounded px-1.5 py-0.5">AI</span>
-        </div>
-
-        <div className="px-6 py-5 space-y-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Upload a PDF and AI will generate flashcards automatically into the selected folder.
-          </p>
-          {!selectedFolder && (
-            <p className="text-xs text-rose-500 dark:text-rose-400">Select a folder first.</p>
-          )}
-          <form onSubmit={handleImportPdf} className="space-y-3">
-            <input
-              type="file" name="file" accept="application/pdf"
-              onChange={e => { const f = e.target.files?.[0] || null; setPdfFile(f); setImportStatus("idle"); setImportMessage(null); }}
-              className="block w-full text-sm text-slate-700 dark:text-slate-300
-                         file:mr-3 file:rounded-lg file:border-0 file:px-3 file:py-1.5
-                         file:bg-indigo-50 dark:file:bg-indigo-900/40
-                         file:text-sm file:font-medium file:text-indigo-700 dark:file:text-indigo-400
-                         hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/60 file:transition"
-            />
-            {pdfFile && <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Selected: {pdfFile.name}</p>}
-            <button
-              type="submit"
-              disabled={!selectedFolder || !pdfFile || importStatus === "loading"}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              {importStatus === "loading" ? "Importing…" : "Import PDF"}
-            </button>
-            {importMessage && (
-              <p className={`text-sm ${importStatus === "error" ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                {importMessage}
-              </p>
-            )}
-          </form>
-        </div>
-      </div>
-
-      {/* Card Viewer */}
-      <div className="mt-10">
-        {flashcards.length > 0 ? (
-          <div className="relative w-full max-w-3xl mx-auto px-8">
-            <div className="overflow-hidden">
-              <AnimatePresence mode="wait" custom={slideDirection}>
-                <motion.div
-                  key={flashcards[cardindex]?._id}
-                  custom={slideDirection}
-                  variants={slideVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={{ duration: 0.22, ease: "easeInOut" }}
-                >
-                  <Flashcard card={flashcards[cardindex]} onDelete={handleDelete} onEdit={handleEditStart} />
-                </motion.div>
-              </AnimatePresence>
-            </div>
-
-            <button
-              type="button"
-              aria-label="Previous"
-              onClick={() => decreaseIndex(flashcards.length)}
-              className="absolute left-0 top-[180px] -translate-y-1/2 w-11 h-11 rounded-full
-                         bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200
-                         shadow-lg ring-1 ring-black/5 dark:ring-white/10 hover:shadow-xl transition z-10"
-            >
-              ‹
-            </button>
-
-            <button
-              type="button"
-              aria-label="Next"
-              onClick={() => increaseIndex(flashcards.length)}
-              className="absolute right-0 top-[180px] -translate-y-1/2 w-11 h-11 rounded-full
-                         bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200
-                         shadow-lg ring-1 ring-black/5 dark:ring-white/10 hover:shadow-xl transition z-10"
-            >
-              ›
-            </button>
-
-            <div className="mt-4 text-center text-sm text-slate-600 dark:text-slate-400">
-              {cardindex + 1} / {flashcards.length}
-            </div>
-          </div>
+      <section className="min-w-0">
+        {!folder ? (
+          <EmptyState
+            title={foldersLoading ? "Loading…" : "Create your first folder"}
+            body={foldersLoading ? "" : "Folders hold a set of cards, like one subject or one chapter. Name one on the left to get started."}
+          />
         ) : (
-          <div className="mx-auto max-w-3xl mt-6 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-10 text-center">
-            <div className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-1">No cards yet</div>
-            <p className="text-slate-600 dark:text-slate-400">Select or create a folder to get started.</p>
-          </div>
+          <>
+            <div className="mb-8 flex items-end justify-between gap-6">
+              <div className="min-w-0">
+                <h1 className="truncate text-4xl font-bold tracking-tight">{folder.name}</h1>
+                <p className="mt-1.5 text-muted">
+                  {cards.length} {cards.length === 1 ? "card" : "cards"}
+                  <button onClick={() => setDialog({ kind: "rename" })} className="ml-4 underline-offset-4 hover:text-ink hover:underline">Rename</button>
+                  <button onClick={() => setDialog({ kind: "deleteFolder" })} className="ml-3 underline-offset-4 hover:text-bad hover:underline">Delete</button>
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button variant="secondary" onClick={() => setDialog({ kind: "pdf" })}>Import from PDF</Button>
+                <Button onClick={() => setDialog({ kind: "card" })}>Add card</Button>
+              </div>
+            </div>
+
+            {current ? (
+              <>
+                <div className="flex items-center gap-6">
+                  <ArrowButton dir={-1} onClick={() => go(-1)} />
+                  <div className="relative mx-auto h-[340px] w-full max-w-[640px]">
+                    {/* the rest of the deck peeking out behind the current card */}
+                    {cards.length > 1 && <div className="absolute inset-0 translate-y-3 rotate-[1.5deg] rounded-xl border border-line bg-card/70" />}
+                    {cards.length > 2 && <div className="absolute inset-0 translate-y-1.5 -rotate-1 rounded-xl border border-line bg-card/85" />}
+                    <AnimatePresence mode="popLayout" custom={direction} initial={false}>
+                      <motion.div
+                        key={current._id}
+                        custom={direction}
+                        className="absolute inset-0"
+                        variants={{
+                          enter: (d: number) => ({ x: d * 80, opacity: 0, rotate: d * 3 }),
+                          center: { x: 0, opacity: 1, rotate: 0 },
+                          exit: (d: number) => ({ x: d * -140, opacity: 0, rotate: d * -6 }),
+                        }}
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        transition={{ type: "spring", stiffness: 380, damping: 34 }}
+                      >
+                        <FlipCard className="h-full" front={current.question} back={current.answer} flipped={flipped} onFlip={() => setFlipped((f) => !f)} />
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                  <ArrowButton dir={1} onClick={() => go(1)} />
+                </div>
+
+                <div className="mt-8 flex items-center justify-center gap-6 text-sm text-muted">
+                  <span className="tabular-nums font-medium text-ink">{index + 1} / {cards.length}</span>
+                  <span className="flex items-center gap-1.5"><Kbd>←</Kbd><Kbd>→</Kbd> move</span>
+                  <span className="flex items-center gap-1.5"><Kbd>Space</Kbd> flip</span>
+                </div>
+
+                <CardList
+                  cards={cards}
+                  currentId={current._id}
+                  onOpen={(i) => { setDirection(i > index ? 1 : -1); setIndex(i); setFlipped(false); }}
+                  onEdit={(card) => setDialog({ kind: "card", card })}
+                  onDelete={(card) => setDialog({ kind: "deleteCard", card })}
+                />
+              </>
+            ) : (
+              <EmptyState
+                title="This folder is empty"
+                body="Add cards one at a time, or import a PDF of your notes and cards will be written for you."
+              >
+                <div className="mt-6 flex justify-center gap-2">
+                  <Button variant="secondary" onClick={() => setDialog({ kind: "pdf" })}>Import from PDF</Button>
+                  <Button onClick={() => setDialog({ kind: "card" })}>Add card</Button>
+                </div>
+              </EmptyState>
+            )}
+          </>
         )}
-      </div>
+      </section>
+
+      {/* ── Dialogs ── */}
+      <CardDialog
+        open={dialog?.kind === "card"}
+        card={dialog?.kind === "card" ? dialog.card : undefined}
+        folderId={folderId}
+        onClose={() => setDialog(null)}
+        onSaved={(saved, isNew) => {
+          setCards((all) => (isNew ? [...all, saved] : all.map((c) => (c._id === saved._id ? saved : c))));
+          if (isNew) { setDirection(1); setIndex(cards.length); setFlipped(false); }
+        }}
+      />
+      <PdfDialog open={dialog?.kind === "pdf"} folderId={folderId} onClose={() => setDialog(null)} onImported={reload} />
+      <RenameDialog
+        open={dialog?.kind === "rename"}
+        folder={folder}
+        onClose={() => setDialog(null)}
+        onSaved={(f) => setFolders((all) => all.map((x) => (x._id === f._id ? f : x)))}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === "deleteFolder"}
+        title={`Delete “${folder?.name}”?`}
+        body={`This deletes the folder and all ${cards.length} of its cards. This can't be undone.`}
+        action="Delete folder"
+        onClose={() => setDialog(null)}
+        onConfirm={async () => {
+          await api(`/api/folders/${folderId}`, "DELETE");
+          setFolders((all) => all.filter((f) => f._id !== folderId));
+          setFolderId("");
+        }}
+      />
+      <ConfirmDialog
+        open={dialog?.kind === "deleteCard"}
+        title="Delete this card?"
+        body={dialog?.kind === "deleteCard" ? dialog.card.question : ""}
+        action="Delete card"
+        onClose={() => setDialog(null)}
+        onConfirm={async () => {
+          if (dialog?.kind !== "deleteCard") return;
+          const id = dialog.card._id;
+          await api(`/api/flashcards/${id}`, "DELETE");
+          setCards((all) => all.filter((c) => c._id !== id));
+          setIndex((i) => Math.max(0, Math.min(i, cards.length - 2)));
+        }}
+      />
     </div>
+  );
+}
+
+/* ── Pieces ─────────────────────────────────────────────── */
+
+function FolderSidebar({
+  folders, loading, selected, onSelect, onCreated,
+}: {
+  folders: Folder[]; loading: boolean; selected: string;
+  onSelect: (id: string) => void; onCreated: (f: Folder) => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      onCreated(await api<Folder>("/api/folders", "POST", { name: name.trim() }));
+      setName("");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const sorted = [...folders].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <aside className="sticky top-28 self-start">
+      <h2 className="mb-3 px-3 text-sm font-medium text-muted">Folders</h2>
+      <ul className="space-y-0.5">
+        {sorted.map((f) => (
+          <li key={f._id}>
+            <button
+              onClick={() => onSelect(f._id)}
+              className={`relative w-full truncate rounded-lg px-3 py-2 text-left text-[15px] transition ${
+                f._id === selected ? "font-semibold" : "text-muted hover:bg-ink/5 hover:text-ink"
+              }`}
+            >
+              {f._id === selected && (
+                <motion.span
+                  layoutId="folder-highlight"
+                  className="absolute inset-0 rounded-lg bg-card shadow-sm ring-1 ring-line"
+                  transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                >
+                  <span className="absolute inset-y-2 left-0 w-1 rounded-r bg-hl" />
+                </motion.span>
+              )}
+              <span className="relative">{f.name}</span>
+            </button>
+          </li>
+        ))}
+        {!loading && !folders.length && <li className="px-3 py-2 text-sm text-muted">No folders yet.</li>}
+      </ul>
+
+      <form onSubmit={create} className="mt-5 flex gap-2 border-t border-line pt-5">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New folder" required className={`${inputClass} h-9 text-sm`} />
+        <Button size="sm" variant="secondary" className="h-9" aria-label="Create folder">Add</Button>
+      </form>
+      {error && <div className="mt-2"><Notice>{error}</Notice></div>}
+    </aside>
+  );
+}
+
+function ArrowButton({ dir, onClick }: { dir: 1 | -1; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={dir === 1 ? "Next card" : "Previous card"}
+      className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-card text-muted transition hover:border-muted hover:text-ink active:scale-90"
+    >
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+        <path d={dir === 1 ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
+function CardList({
+  cards, currentId, onOpen, onEdit, onDelete,
+}: {
+  cards: Card[]; currentId: string;
+  onOpen: (i: number) => void; onEdit: (c: Card) => void; onDelete: (c: Card) => void;
+}) {
+  return (
+    <div className="mt-16">
+      <h2 className="mb-3 text-sm font-medium text-muted">All cards</h2>
+      <Panel className="divide-y divide-line overflow-hidden">
+        <AnimatePresence initial={false}>
+          {cards.map((c, i) => (
+            <motion.div
+              key={c._id}
+              layout
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className={`group grid grid-cols-[2.5rem_1fr_1fr_auto] items-center gap-4 px-4 py-3 transition ${
+                c._id === currentId ? "bg-ink/[0.04] shadow-[inset_3px_0_var(--hl)]" : "hover:bg-ink/[0.03]"
+              }`}
+            >
+              <span className="text-sm tabular-nums text-muted">{i + 1}</span>
+              <button onClick={() => onOpen(i)} className="truncate text-left font-medium">{c.question}</button>
+              <button onClick={() => onOpen(i)} className="truncate text-left text-muted">{c.answer}</button>
+              <span className="flex gap-1 opacity-60 transition group-hover:opacity-100">
+                <Button size="sm" variant="ghost" onClick={() => onEdit(c)}>Edit</Button>
+                <Button size="sm" variant="ghost" className="hover:text-bad" onClick={() => onDelete(c)}>Delete</Button>
+              </span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </Panel>
+    </div>
+  );
+}
+
+function EmptyState({ title, body, children }: { title: string; body: string; children?: React.ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="index-card mx-auto mt-4 max-w-[640px] rounded-xl border border-dashed border-line px-10 pb-12 pt-20 text-center"
+    >
+      <h2 className="font-card text-3xl">{title}</h2>
+      {body && <p className="mx-auto mt-3 max-w-md text-muted">{body}</p>}
+      {children}
+    </motion.div>
+  );
+}
+
+/* ── Dialogs ────────────────────────────────────────────── */
+
+function CardDialog({
+  open, card, folderId, onClose, onSaved,
+}: {
+  open: boolean; card?: Card; folderId: string;
+  onClose: () => void; onSaved: (c: Card, isNew: boolean) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [a, setA] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) { setQ(card?.question ?? ""); setA(card?.answer ?? ""); setError(null); }
+  }, [open, card]);
+
+  const save = async (e: FormEvent, keepOpen = false) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const saved = card
+        ? await api<Card>(`/api/flashcards/${card._id}`, "PATCH", { question: q, answer: a })
+        : await api<Card>("/api/flashcards", "POST", { question: q, answer: a, folder: folderId });
+      onSaved(saved, !card);
+      if (keepOpen) { setQ(""); setA(""); } else onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const area = `${inputClass} h-auto resize-none py-2.5`;
+
+  return (
+    <Modal open={open} onClose={onClose} title={card ? "Edit card" : "Add card"}>
+      <form onSubmit={save} className="space-y-4">
+        <Field label="Question">
+          <textarea autoFocus rows={3} value={q} onChange={(e) => setQ(e.target.value)} required className={area} />
+        </Field>
+        <Field label="Answer">
+          <textarea rows={3} value={a} onChange={(e) => setA(e.target.value)} required className={area} />
+        </Field>
+        {error && <Notice>{error}</Notice>}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          {!card && (
+            <Button type="button" variant="secondary" disabled={saving || !q || !a} onClick={(e) => save(e, true)}>
+              Save and add another
+            </Button>
+          )}
+          <Button disabled={saving}>{card ? "Save changes" : "Save card"}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PdfDialog({
+  open, folderId, onClose, onImported,
+}: { open: boolean; folderId: string; onClose: () => void; onImported: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => { if (open) { setFile(null); setStatus("idle"); setMessage(""); } }, [open]);
+
+  const upload = async () => {
+    if (!file) return;
+    setStatus("loading");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("folderId", folderId);
+    try {
+      const res = await authfetch("/api/flashcards/import/pdf", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "The PDF couldn't be imported.");
+      const n = data.createdCount ?? data.cards?.length;
+      setStatus("done");
+      setMessage(n != null ? `Added ${n} card${n === 1 ? "" : "s"} to this folder.` : "Cards added to this folder.");
+      onImported();
+    } catch (err) {
+      setStatus("error");
+      setMessage((err as Error).message);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Import from PDF">
+      <p className="mb-4 text-sm text-muted">Upload your notes and AI writes question-and-answer cards from them.</p>
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); setFile(e.dataTransfer.files[0] ?? null); }}
+        className={`flex h-36 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition ${
+          dragging ? "border-info bg-info/5" : "border-line hover:border-muted"
+        }`}
+      >
+        <input type="file" accept="application/pdf" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <span className="font-medium">{file ? file.name : "Drop a PDF here"}</span>
+        <span className="mt-1 text-sm text-muted">{file ? "Click to choose a different file" : "or click to choose one"}</span>
+      </label>
+      <div className="mt-4 min-h-10">{message && <Notice tone={status === "error" ? "bad" : "good"}>{message}</Notice>}</div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Button variant="ghost" onClick={onClose}>{status === "done" ? "Close" : "Cancel"}</Button>
+        <Button onClick={upload} disabled={!file || status === "loading"}>
+          {status === "loading" ? "Importing…" : "Import PDF"}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+function RenameDialog({
+  open, folder, onClose, onSaved,
+}: { open: boolean; folder?: Folder; onClose: () => void; onSaved: (f: Folder) => void }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (open) { setName(folder?.name ?? ""); setError(null); } }, [open, folder]);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!folder) return;
+    try {
+      onSaved(await api<Folder>(`/api/folders/${folder._id}`, "PATCH", { name: name.trim() }));
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rename folder">
+      <form onSubmit={save} className="space-y-4">
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} />
+        {error && <Notice>{error}</Notice>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button>Rename</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ConfirmDialog({
+  open, title, body, action, onClose, onConfirm,
+}: {
+  open: boolean; title: string; body: string; action: string;
+  onClose: () => void; onConfirm: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (open) setError(null); }, [open]);
+
+  return (
+    <Modal open={open} onClose={onClose} title={title}>
+      <p className="text-muted">{body}</p>
+      {error && <div className="mt-4"><Notice>{error}</Notice></div>}
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button
+          className="bg-bad text-white hover:opacity-90"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try { await onConfirm(); onClose(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+          }}
+        >
+          {action}
+        </Button>
+      </div>
+    </Modal>
   );
 }

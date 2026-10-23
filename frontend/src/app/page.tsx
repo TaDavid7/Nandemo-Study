@@ -2,195 +2,94 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, type Variants } from "framer-motion";
+import { motion } from "framer-motion";
+import { getToken } from "@/lib/api";
+import { FlipCard } from "@/components/ui";
 
-const features = [
-  {
-    title: "Flashcards",
-    description:
-      "Build and organize cards by subject. Import entire note sets from a PDF using AI-powered extraction.",
-    label: "Manage cards",
-    href: "/home",
-  },
-  {
-    title: "Daily Practice",
-    description:
-      "Spaced-repetition scheduling surfaces the exact cards you need to review — right before you'd forget them.",
-    label: "Start daily",
-    href: "/daily",
-  },
-  {
-    title: "Speedrun",
-    description:
-      "Race against the clock. Answer as many questions as you can before time runs out and the deck recycles.",
-    label: "Try speedrun",
-    href: "/speedrun",
-  },
-  {
-    title: "Versus",
-    description:
-      "Go head-to-head with a friend in real time. First to answer correctly takes the point.",
-    label: "Play versus",
-    href: "/versus",
-  },
+const SAMPLES = [
+  { q: "なんでも (nandemo)", a: "Anything, whatever it is" },
+  { q: "Mitochondria", a: "Where the cell makes most of its energy (ATP)" },
+  { q: "Year the Berlin Wall fell", a: "1989" },
+  { q: "d/dx sin x", a: "cos x" },
 ];
 
-const stagger: Variants = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.13 } },
-};
+const MODES = [
+  { name: "Decks", href: "/home", text: "Write cards by hand or turn a PDF of your notes into a full deck." },
+  { name: "Daily", href: "/daily", text: "Spaced repetition picks the cards you're about to forget, every day." },
+  { name: "Speedrun", href: "/speedrun", text: "Type answers against the clock. The deck reshuffles until time's up." },
+  { name: "Versus", href: "/versus", text: "Share a room code and race friends to the right answer." },
+];
 
-const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 26 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
-};
-
-export default function PromoPage() {
+export default function LandingPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [i, setI] = useState(0);
+  const [flipped, setFlipped] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem("token")) {
-      router.replace("/home");
-    } else {
-      setReady(true);
-    }
-  }, []);
+    if (getToken()) router.replace("/home");
+    else setReady(true);
+  }, [router]);
+
+  // The demo card flips, then moves to the next sample.
+  useEffect(() => {
+    if (!ready) return;
+    const id = setTimeout(() => {
+      if (!flipped) setFlipped(true);
+      else { setFlipped(false); setI((n) => (n + 1) % SAMPLES.length); }
+    }, flipped ? 2200 : 1800);
+    return () => clearTimeout(id);
+  }, [ready, flipped]);
 
   if (!ready) return null;
 
   return (
-    <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-10 bg-white dark:bg-slate-950 text-slate-900 dark:text-white min-h-[calc(100vh-3.5rem)] transition-colors">
-      {/* ── Hero ── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20 text-center">
-        <motion.div
-          variants={stagger}
-          initial="hidden"
-          animate="show"
-          className="max-w-3xl mx-auto space-y-7"
-        >
-          <motion.div variants={fadeUp} className="flex justify-center">
-            <motion.div
-              className="h-12 w-12 rounded-xl bg-indigo-600 shadow-lg shadow-indigo-200 dark:shadow-indigo-900"
-              animate={{ scale: [1, 1.07, 1] }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", repeatDelay: 1.5 }}
-            />
-          </motion.div>
-
-          <motion.h1
-            variants={fadeUp}
-            className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight"
-          >
-            Build knowledge
+    <div>
+      <section className="grid grid-cols-[1.05fr_1fr] items-center gap-16 pt-6">
+        <div>
+          <h1 className="text-6xl font-bold leading-[1.02] tracking-tight">
+            Study anything.
             <br />
-            <span className="text-indigo-600 dark:text-indigo-400">that actually sticks.</span>
-          </motion.h1>
-
-          <motion.p
-            variants={fadeUp}
-            className="text-lg sm:text-xl text-slate-600 dark:text-slate-400 leading-relaxed"
-          >
-            Nandemo is a modern study tool built around spaced repetition.
-            Learn faster, retain longer, and make every session count.
-          </motion.p>
-
-          <motion.div variants={fadeUp} className="flex justify-center gap-4 pt-2">
-            <Link
-              href="/home"
-              className="px-6 py-3 rounded-2xl bg-indigo-600 text-white font-semibold
-                         hover:bg-indigo-500 transition shadow-lg shadow-indigo-100 dark:shadow-indigo-900/50"
-            >
-              Get Started
+            Remember it next week.
+          </h1>
+          <p className="mt-6 max-w-md text-lg text-muted">
+            Nandemo turns your notes into flashcards and schedules each review right before you&apos;d forget it.
+          </p>
+          <div className="mt-9 flex gap-3">
+            <Link href="/account" className="inline-flex h-12 items-center rounded-lg bg-ink px-6 font-medium text-card transition hover:opacity-90">
+              Create a free account
             </Link>
-            <Link
-              href="/account"
-              className="px-6 py-3 rounded-2xl font-semibold transition
-                         bg-transparent text-slate-700 dark:text-slate-300
-                         ring-1 ring-slate-300 dark:ring-slate-700
-                         hover:ring-slate-400 dark:hover:ring-slate-500
-                         hover:text-slate-900 dark:hover:text-white"
-            >
-              Sign In
+            <Link href="/account" className="inline-flex h-12 items-center rounded-lg border border-line bg-card px-6 font-medium transition hover:border-muted">
+              Sign in
             </Link>
+          </div>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, rotate: 4, y: 30 }}
+          animate={{ opacity: 1, rotate: -2, y: 0 }}
+          transition={{ type: "spring", stiffness: 120, damping: 16 }}
+          className="relative h-[320px]"
+        >
+          <div className="absolute inset-0 translate-x-4 translate-y-4 rotate-3 rounded-xl border border-line bg-card/60" />
+          <div className="absolute inset-0 translate-x-2 translate-y-2 rotate-1 rounded-xl border border-line bg-card/80" />
+          <motion.div key={i} className="absolute inset-0" initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
+            <FlipCard className="h-full" front={SAMPLES[i].q} back={SAMPLES[i].a} flipped={flipped} onFlip={() => setFlipped((f) => !f)} />
           </motion.div>
         </motion.div>
       </section>
 
-      {/* ── Divider ── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="border-t border-slate-200 dark:border-slate-800" />
-      </div>
-
-      {/* ── Features ── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <motion.p
-          className="text-xs uppercase tracking-widest text-indigo-600 dark:text-indigo-500 font-semibold text-center mb-12"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.4 }}
-        >
-          Four ways to study
-        </motion.p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {features.map((f, i) => (
-            <motion.div
-              key={f.title}
-              initial={{ opacity: 0, y: 28 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.08 }}
-            >
-              <Link
-                href={f.href}
-                className="group block rounded-2xl border p-7 transition
-                           bg-white dark:bg-slate-900
-                           border-slate-200 dark:border-slate-800
-                           hover:border-indigo-200 dark:hover:border-indigo-800
-                           hover:bg-slate-50 dark:hover:bg-slate-800/60
-                           hover:shadow-md"
-              >
-                <h3 className="text-lg font-semibold mb-2
-                               text-slate-900 dark:text-white
-                               group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition">
-                  {f.title}
-                </h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-5">
-                  {f.description}
-                </p>
-                <span className="text-xs font-medium text-indigo-600 dark:text-indigo-500 opacity-0 group-hover:opacity-100 transition">
-                  {f.label} &rarr;
-                </span>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Bottom CTA ── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
-        <motion.div
-          className="rounded-2xl border p-12 text-center space-y-5
-                     bg-slate-50 dark:bg-slate-900
-                     border-slate-200 dark:border-slate-800"
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.45 }}
-        >
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-white">Ready to start?</h2>
-          <p className="text-slate-600 dark:text-slate-400 text-base max-w-md mx-auto">
-            Create a free account and have your first deck ready in under a minute.
-          </p>
-          <Link
-            href="/account"
-            className="inline-block mt-2 px-8 py-3 rounded-2xl bg-indigo-600 text-white
-                       font-semibold hover:bg-indigo-500 transition shadow-lg shadow-indigo-100 dark:shadow-indigo-900/50"
-          >
-            Create Account
+      <section className="mt-28 grid grid-cols-4 border-t border-line">
+        {MODES.map((m) => (
+          <Link key={m.name} href={m.href} className="group border-line py-8 pr-8 [&:not(:first-child)]:border-l [&:not(:first-child)]:pl-8">
+            <h2 className="text-xl font-semibold">
+              <span className="bg-[linear-gradient(transparent_60%,var(--hl)_60%)] bg-[length:0%_100%] bg-no-repeat transition-[background-size] duration-300 group-hover:bg-[length:100%_100%]">
+                {m.name}
+              </span>
+            </h2>
+            <p className="mt-2 text-muted">{m.text}</p>
           </Link>
-        </motion.div>
+        ))}
       </section>
     </div>
   );

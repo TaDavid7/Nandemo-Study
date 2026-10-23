@@ -1,57 +1,116 @@
 "use client";
-import Link from "next/link";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { getSocket, getUsername, RoomState, useFolders, useRequireAuth } from "@/lib/api";
+import { Button, Chip, Field, Notice, PageHeader, Panel, inputClass } from "@/components/ui";
 
-function PlusIcon() {
-  return (
-    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-    </svg>
-  );
-}
+export default function VersusPage() {
+  const signedIn = useRequireAuth();
+  const router = useRouter();
+  const { folders, loading } = useFolders();
+  const [name, setName] = useState("");
+  const [folderId, setFolderId] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState<"create" | "join" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-function ArrowRightIcon() {
-  return (
-    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-    </svg>
-  );
-}
+  useEffect(() => setName(getUsername() || ""), []);
 
-export default function VersusLanding() {
+  if (!signedIn) return null;
+
+  const begin = (kind: "create" | "join") => {
+    const username = name.trim();
+    if (!username) { setError("Enter a display name so other players know who you are."); return null; }
+    localStorage.setItem("username", username);
+    setError(null);
+    setBusy(kind);
+    return { socket: getSocket(), username };
+  };
+
+  const create = () => {
+    const s = begin("create");
+    if (!s || !folderId) return;
+    const timeout = setTimeout(() => { setBusy(null); setError("The server didn't respond. Check your connection and try again."); }, 10000);
+    s.socket.emit("createRoom", { folderId, username: s.username }, (resp: { ok: boolean; code?: string; error?: string }) => {
+      clearTimeout(timeout);
+      if (!resp?.ok || !resp.code) { setBusy(null); setError(resp?.error || "The room couldn't be created."); return; }
+      router.push(`/versus/room/${resp.code}`);
+    });
+  };
+
+  const join = () => {
+    const room = code.trim().toUpperCase();
+    const s = begin("join");
+    if (!s || !room) return;
+    const fail = () => {
+      clearTimeout(timeout);
+      s.socket.off("roomState", onState);
+      s.socket.off("error", fail);
+      setBusy(null);
+      setError(`No room found with code ${room}. Check the code with the host.`);
+    };
+    const timeout = setTimeout(fail, 6000);
+    const onState = (rs: RoomState) => {
+      if (rs.code?.toUpperCase() !== room) return;
+      clearTimeout(timeout);
+      s.socket.off("roomState", onState);
+      s.socket.off("error", fail);
+      router.push(`/versus/room/${room}`);
+    };
+    s.socket.on("roomState", onState);
+    s.socket.once("error", fail);
+    s.socket.emit("joinRoom", { code: room, username: s.username });
+  };
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 dark:text-white">Versus</h1>
-        <p className="mt-2 text-slate-600 dark:text-slate-400 max-w-xl">
-          Challenge friends to a live flashcard battle. Pick a folder, create or join a room,
-          and race to answer correctly — every point counts.
-        </p>
+      <PageHeader title="Versus" sub="Race a friend through the same deck in real time. The first correct answer takes the point." />
+
+      <div className="mb-6 max-w-sm">
+        <Field label="Your display name">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="What should others see?" className={inputClass} />
+        </Field>
       </div>
 
-      <div className="rounded-2xl shadow-md bg-white dark:bg-slate-800 ring-1 ring-black/5 dark:ring-white/10 p-6 sm:p-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Link
-            href="/versus/create"
-            className="group rounded-2xl border border-slate-200 dark:border-slate-700 p-6 hover:shadow-md hover:border-indigo-200 dark:hover:border-indigo-700 transition-all"
-          >
-            <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 p-3 text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/50 transition-colors">
-              <PlusIcon />
-            </div>
-            <div className="text-xl font-semibold text-slate-900 dark:text-white">Create room</div>
-            <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick a folder and host the match.</div>
-          </Link>
+      {error && <div className="mb-6 max-w-2xl"><Notice>{error}</Notice></div>}
 
-          <Link
-            href="/versus/join"
-            className="group rounded-2xl border border-slate-200 dark:border-slate-700 p-6 hover:shadow-md hover:border-emerald-200 dark:hover:border-emerald-700 transition-all"
-          >
-            <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-900/30 p-3 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/50 transition-colors">
-              <ArrowRightIcon />
+      <div className="grid grid-cols-2 gap-6">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          <Panel className="flex h-full flex-col p-7">
+            <h2 className="text-xl font-semibold">Host a match</h2>
+            <p className="mt-1 text-muted">Choose the folder everyone will play.</p>
+            <div className="mt-5 flex flex-1 flex-wrap content-start gap-2">
+              {folders.map((f) => (
+                <Chip key={f._id} active={folderId === f._id} onClick={() => setFolderId(f._id)}>{f.name}</Chip>
+              ))}
+              {!loading && !folders.length && <p className="text-sm text-muted">Create a folder in Decks first.</p>}
             </div>
-            <div className="text-xl font-semibold text-slate-900 dark:text-white">Join room</div>
-            <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter a code and jump in.</div>
-          </Link>
-        </div>
+            <Button size="lg" className="mt-6" disabled={!folderId || busy !== null} onClick={create}>
+              {busy === "create" ? "Creating room…" : "Create room"}
+            </Button>
+          </Panel>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
+          <Panel className="flex h-full flex-col p-7">
+            <h2 className="text-xl font-semibold">Join a match</h2>
+            <p className="mt-1 text-muted">Enter the 6-character code from the host.</p>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^a-z0-9]/gi, "").toUpperCase())}
+              onKeyDown={(e) => e.key === "Enter" && join()}
+              maxLength={6}
+              placeholder="ABC123"
+              aria-label="Room code"
+              className="mt-5 h-20 w-full shrink-0 rounded-lg border border-line bg-desk/60 text-center font-card text-5xl tracking-[0.3em] uppercase outline-none transition placeholder:text-muted/30 focus:border-info focus:bg-card"
+            />
+            <div className="flex-1" />
+            <Button size="lg" className="mt-6" disabled={code.length < 6 || busy !== null} onClick={join}>
+              {busy === "join" ? "Joining…" : "Join room"}
+            </Button>
+          </Panel>
+        </motion.div>
       </div>
     </div>
   );
