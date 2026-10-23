@@ -1,9 +1,12 @@
 // Shared building blocks used by every page.
 "use client";
-import React, { useEffect } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import React, { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+
+/** Strong ease-out for entrances and exits. Same curve as --ease-out in globals.css. */
+export const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
 /* ── Button ───────────────────────────────────────────── */
 
@@ -42,9 +45,9 @@ export function Button({
 
 export function PageHeader({ title, sub, children }: { title: string; sub?: string; children?: React.ReactNode }) {
   return (
-    <div className="mb-8 flex items-end justify-between gap-6">
+    <div className="mb-8 flex items-end justify-between gap-6 mobile:mb-6 mobile:flex-col mobile:items-stretch mobile:gap-4">
       <div>
-        <h1 className="text-4xl font-bold tracking-tight">{title}</h1>
+        <h1 className="text-4xl font-bold tracking-tight mobile:text-3xl">{title}</h1>
         {sub && <p className="mt-2 max-w-xl text-muted">{sub}</p>}
       </div>
       {children}
@@ -104,6 +107,11 @@ export function Notice({ tone = "bad", children }: { tone?: "bad" | "good"; chil
 }
 
 /* ── Modal ────────────────────────────────────────────── */
+// The fade is plain CSS (.modal-backdrop / .modal-panel in globals.css). Motion's
+// opacity animations here could drop to their starting value for a frame when the
+// dialog re-rendered, which made it blink while you typed.
+
+const MODAL_CLOSE_MS = 200; // matches the transition in globals.css
 
 export function Modal({
   open,
@@ -116,6 +124,28 @@ export function Modal({
   title: string;
   children: React.ReactNode;
 }) {
+  // Stay mounted while the closing fade plays.
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) { setMounted(true); setClosing(false); }
+    else if (mounted) setClosing(true);
+  }
+
+  // While closing, keep showing what the dialog showed last, so the title or fields
+  // don't change under the fade (e.g. "Edit card" turning into "Add card").
+  const last = useRef({ title, children });
+  if (open) last.current = { title, children };
+  const shown = open ? { title, children } : last.current;
+
+  useEffect(() => {
+    if (!closing) return;
+    const id = setTimeout(() => { setMounted(false); setClosing(false); }, MODAL_CLOSE_MS);
+    return () => clearTimeout(id);
+  }, [closing]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -123,38 +153,32 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  if (!mounted) return null;
+
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onMouseDown={onClose}
-        >
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-label={title}
-            className="w-full max-w-lg rounded-xl border border-line bg-card p-6 shadow-2xl"
-            initial={{ opacity: 0, y: 16, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32 }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h2 className="mb-5 text-xl font-semibold">{title}</h2>
-            {children}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div
+      className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 mobile:items-end mobile:p-0"
+      data-closing={closing ? "" : undefined}
+      onMouseDown={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={shown.title}
+        className="modal-panel w-full max-w-lg rounded-xl border border-line bg-card p-6 shadow-2xl mobile:max-w-[30rem] mobile:rounded-b-none mobile:border-b-0 mobile:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h2 className="mb-5 text-xl font-semibold">{shown.title}</h2>
+        {shown.children}
+      </div>
+    </div>
   );
 }
 
 /* ── Flip card ────────────────────────────────────────── */
 // The index card used for studying everywhere in the app.
+// The turn is a CSS transition (.flip-card in globals.css), so it runs on the
+// compositor and reverses from mid-turn if the card is flipped again.
 
 export function FlipCard({
   front,
@@ -170,30 +194,28 @@ export function FlipCard({
   className?: string;
 }) {
   const face =
-    "index-card absolute inset-0 flex flex-col rounded-xl border border-line shadow-[0_1px_0_var(--line),0_12px_30px_-12px_rgb(0_0_0/0.25)] [backface-visibility:hidden]";
+    "flip-face index-card absolute inset-0 flex flex-col rounded-xl border border-line shadow-[0_1px_0_var(--line),0_12px_30px_-12px_rgb(0_0_0/0.25)]";
   return (
-    <div className={cx("[perspective:1400px]", className)}>
-      <motion.button
+    <div className={cx("flip-card", className)} data-flipped={flipped ? "" : undefined}>
+      <button
         type="button"
         onClick={onFlip}
         aria-label={flipped ? "Show question" : "Show answer"}
-        className="relative h-full w-full cursor-pointer text-left [transform-style:preserve-3d]"
-        animate={{ rotateY: flipped ? 180 : 0 }}
-        transition={{ type: "spring", stiffness: 260, damping: 26 }}
+        className="flip-card-inner relative block h-full w-full cursor-pointer text-left"
       >
-        <div className={face}>
+        <div className={cx(face, "flip-face-front")}>
           <span className="px-7 pt-5 text-sm text-muted">Question</span>
-          <div className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug">
+          <div className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug mobile:px-6 mobile:pb-8 mobile:text-2xl">
             {front}
           </div>
         </div>
-        <div className={face} style={{ transform: "rotateY(180deg)" }}>
+        <div className={cx(face, "flip-face-back")}>
           <span className="px-7 pt-5 text-sm text-muted">Answer</span>
-          <div className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug">
+          <div className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug mobile:px-6 mobile:pb-8 mobile:text-2xl">
             {back}
           </div>
         </div>
-      </motion.button>
+      </button>
     </div>
   );
 }

@@ -68,9 +68,9 @@ export default function VersusRoomPage() {
 
   return (
     <div>
-      <div className="mb-8 flex items-end justify-between">
+      <div className="mb-8 flex items-end justify-between gap-4 mobile:mb-6 mobile:flex-col mobile:items-stretch">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight">Versus</h1>
+          <h1 className="text-4xl font-bold tracking-tight mobile:text-3xl">Versus</h1>
           <p className="mt-1.5 text-muted">
             Room <span className="font-semibold tracking-widest text-ink">{code}</span>
             <span className="mx-2">·</span>
@@ -85,13 +85,13 @@ export default function VersusRoomPage() {
 
       {closed && <div className="mb-6"><Notice>The host closed the room. Taking you back to Versus…</Notice></div>}
 
-      <div className="grid grid-cols-[1fr_280px] gap-8">
+      <div className="grid grid-cols-[1fr_17.5rem] gap-8 mobile:grid-cols-1 mobile:gap-6">
         <div className="min-w-0">
           {results ? (
             <Results room={results} onDone={() => router.push("/versus")} />
           ) : room?.started && room.currentQuestion ? (
             <>
-              <div className="index-card relative flex h-[280px] flex-col rounded-xl border border-line shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)]">
+              <div className="index-card relative flex h-[17.5rem] flex-col rounded-xl border border-line mobile:h-[15rem] shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)]">
                 <span className="px-7 pt-5 text-sm text-muted">Question {(room.currentIndex ?? 0) + 1}</span>
                 <AnimatePresence mode="wait">
                   <motion.p
@@ -99,7 +99,7 @@ export default function VersusRoomPage() {
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -12 }}
-                    className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug"
+                    className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug mobile:px-6 mobile:text-2xl"
                   >
                     {room.currentQuestion.question}
                   </motion.p>
@@ -140,9 +140,9 @@ export default function VersusRoomPage() {
               )}
             </>
           ) : (
-            <Panel className="flex h-[280px] flex-col items-center justify-center text-center">
+            <Panel className="flex h-[17.5rem] flex-col items-center justify-center px-4 text-center">
               <p className="text-muted">Share this code with the people you&apos;re playing</p>
-              <p className="my-3 font-card text-7xl tracking-[0.2em]">{code}</p>
+              <p className="my-3 font-card text-7xl tracking-[0.2em] mobile:text-5xl">{code}</p>
               <Button
                 variant="ghost"
                 size="sm"
@@ -212,7 +212,7 @@ function Results({ room, onDone }: { room: RoomState; onDone: () => void }) {
       <Panel className="p-10 text-center">
         <p className="text-muted">Game over</p>
         <h2 className="mt-2 font-card text-5xl">
-          <span className="bg-[linear-gradient(transparent_55%,var(--hl)_55%)] px-1">{ranked[0]?.username ?? "Nobody"} wins</span>
+          <span className="bg-[linear-gradient(transparent_80%,var(--hl)_80%)] px-1">{ranked[0]?.username ?? "Nobody"} wins</span>
         </h2>
         <p className="mt-3 text-muted">with {ranked[0]?.score ?? 0} point{ranked[0]?.score === 1 ? "" : "s"}</p>
         <Button size="lg" className="mt-8" onClick={onDone}>Back to Versus</Button>

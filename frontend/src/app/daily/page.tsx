@@ -131,7 +131,7 @@ function Session({ onExit }: { onExit: () => void }) {
         className="mx-auto max-w-lg py-16 text-center"
       >
         <h1 className="font-card text-5xl">
-          <span className="bg-[linear-gradient(transparent_55%,var(--hl)_55%)] px-1">All caught up</span>
+          <span className="bg-[linear-gradient(transparent_80%,var(--hl)_80%)] px-1">All caught up</span>
         </h1>
         <p className="mt-4 text-muted">
           {done ? `You reviewed ${done} card${done === 1 ? "" : "s"}. ` : "Nothing is due right now. "}
@@ -143,7 +143,7 @@ function Session({ onExit }: { onExit: () => void }) {
   }
 
   return (
-    <div className="mx-auto max-w-[680px]">
+    <div className="mx-auto max-w-[42.5rem]">
       <div className="mb-6 flex items-center justify-between">
         <Button variant="ghost" size="sm" onClick={onExit}>← End session</Button>
         <span className="text-sm tabular-nums text-muted">{done} of {total} reviewed</span>
@@ -155,7 +155,7 @@ function Session({ onExit }: { onExit: () => void }) {
 
       {error && <div className="mb-4"><Notice>{error}</Notice></div>}
 
-      <div className="relative h-[360px]">
+      <div className="relative h-[22.5rem] mobile:h-[18rem]">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
             key={current._id}
@@ -170,12 +170,12 @@ function Session({ onExit }: { onExit: () => void }) {
         </AnimatePresence>
       </div>
 
-      <div className="mt-8 h-20">
+      <div className="mt-8 h-20 mobile:mt-6 mobile:h-[8.5rem]">
         <AnimatePresence mode="wait" initial={false}>
           {flipped ? (
             <motion.div
               key="grades"
-              className="grid grid-cols-4 gap-3"
+              className="grid grid-cols-4 gap-3 mobile:grid-cols-2 mobile:gap-2"
               initial="hide"
               animate="show"
               exit="hide"
@@ -186,11 +186,11 @@ function Session({ onExit }: { onExit: () => void }) {
                   key={g.value}
                   variants={{ hide: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
                   onClick={() => grade(g.value)}
-                  className={`flex h-16 flex-col items-center justify-center rounded-lg border bg-card transition active:scale-95 ${g.color}`}
+                  className={`flex h-16 flex-col items-center justify-center rounded-lg border bg-card transition-[color,background-color,border-color,scale] active:scale-95 ${g.color}`}
                 >
                   <span className="font-semibold">{g.label}</span>
                   <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                    <Kbd>{i + 1}</Kbd> {g.hint}
+                    <span className="mobile:hidden"><Kbd>{i + 1}</Kbd></span> {g.hint}
                   </span>
                 </motion.button>
               ))}
@@ -198,7 +198,7 @@ function Session({ onExit }: { onExit: () => void }) {
           ) : (
             <motion.div key="show" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex justify-center">
               <Button size="lg" className="w-64" onClick={() => setFlipped(true)}>
-                Show answer <Kbd>Space</Kbd>
+                Show answer <span className="mobile:hidden"><Kbd>Space</Kbd></span>
               </Button>
             </motion.div>
           )}

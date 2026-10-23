@@ -1,8 +1,9 @@
 "use client";
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { api, authfetch, Card, Folder, useCards, useFolders, useRequireAuth } from "@/lib/api";
-import { Button, Field, FlipCard, Kbd, Modal, Notice, Panel, inputClass } from "@/components/ui";
+import { Button, EASE_OUT, Field, FlipCard, Kbd, Modal, Notice, Panel, inputClass } from "@/components/ui";
+import { useMobile } from "@/components/AppShell";
 
 type Dialog =
   | { kind: "card"; card?: Card }
@@ -21,6 +22,9 @@ export default function DecksPage() {
   const [direction, setDirection] = useState(1);
   const [flipped, setFlipped] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const mobile = useMobile();
+  // Set while a swipe is in progress, so letting go doesn't also count as a tap-to-flip.
+  const swiping = useRef(false);
 
   const folder = folders.find((f) => f._id === folderId);
 
@@ -63,7 +67,7 @@ export default function DecksPage() {
   const current = cards[Math.min(index, cards.length - 1)];
 
   return (
-    <div className="grid grid-cols-[240px_1fr] gap-12">
+    <div className="grid grid-cols-[15rem_1fr] gap-12 mobile:grid-cols-1 mobile:gap-6">
       <FolderSidebar
         folders={folders}
         loading={foldersLoading}
@@ -80,16 +84,16 @@ export default function DecksPage() {
           />
         ) : (
           <>
-            <div className="mb-8 flex items-end justify-between gap-6">
+            <div className="mb-8 flex items-end justify-between gap-6 mobile:mb-6 mobile:flex-col mobile:items-stretch mobile:gap-4">
               <div className="min-w-0">
-                <h1 className="truncate text-4xl font-bold tracking-tight">{folder.name}</h1>
+                <h1 className="truncate text-4xl font-bold tracking-tight mobile:text-3xl">{folder.name}</h1>
                 <p className="mt-1.5 text-muted">
                   {cards.length} {cards.length === 1 ? "card" : "cards"}
                   <button onClick={() => setDialog({ kind: "rename" })} className="ml-4 underline-offset-4 hover:text-ink hover:underline">Rename</button>
                   <button onClick={() => setDialog({ kind: "deleteFolder" })} className="ml-3 underline-offset-4 hover:text-bad hover:underline">Delete</button>
                 </p>
               </div>
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 gap-2 mobile:grid mobile:grid-cols-2">
                 <Button variant="secondary" onClick={() => setDialog({ kind: "pdf" })}>Import from PDF</Button>
                 <Button onClick={() => setDialog({ kind: "card" })}>Add card</Button>
               </div>
@@ -99,7 +103,7 @@ export default function DecksPage() {
               <>
                 <div className="flex items-center gap-6">
                   <ArrowButton dir={-1} onClick={() => go(-1)} />
-                  <div className="relative mx-auto h-[340px] w-full max-w-[640px]">
+                  <div className="relative mx-auto h-[21.25rem] w-full max-w-[40rem] mobile:h-[17rem]">
                     {/* the rest of the deck peeking out behind the current card */}
                     {cards.length > 1 && <div className="absolute inset-0 translate-y-3 rotate-[1.5deg] rounded-xl border border-line bg-card/70" />}
                     {cards.length > 2 && <div className="absolute inset-0 translate-y-1.5 -rotate-1 rounded-xl border border-line bg-card/85" />}
@@ -117,18 +121,36 @@ export default function DecksPage() {
                         animate="center"
                         exit="exit"
                         transition={{ type: "spring", stiffness: 380, damping: 34 }}
+                        // Phone: swipe left for the next card, right for the previous one.
+                        drag={mobile ? "x" : false}
+                        dragConstraints={{ left: 0, right: 0 }}
+                        dragElastic={0.5}
+                        dragSnapToOrigin
+                        onDragStart={() => { swiping.current = true; }}
+                        onDragEnd={(_, info) => {
+                          if (info.offset.x < -70 || info.velocity.x < -500) go(1);
+                          else if (info.offset.x > 70 || info.velocity.x > 500) go(-1);
+                          setTimeout(() => { swiping.current = false; }, 0);
+                        }}
                       >
-                        <FlipCard className="h-full" front={current.question} back={current.answer} flipped={flipped} onFlip={() => setFlipped((f) => !f)} />
+                        <FlipCard
+                          className="h-full"
+                          front={current.question}
+                          back={current.answer}
+                          flipped={flipped}
+                          onFlip={() => { if (!swiping.current) setFlipped((f) => !f); }}
+                        />
                       </motion.div>
                     </AnimatePresence>
                   </div>
                   <ArrowButton dir={1} onClick={() => go(1)} />
                 </div>
 
-                <div className="mt-8 flex items-center justify-center gap-6 text-sm text-muted">
+                <div className="mt-8 flex items-center justify-center gap-6 text-sm text-muted mobile:mt-6">
                   <span className="tabular-nums font-medium text-ink">{index + 1} / {cards.length}</span>
-                  <span className="flex items-center gap-1.5"><Kbd>←</Kbd><Kbd>→</Kbd> move</span>
-                  <span className="flex items-center gap-1.5"><Kbd>Space</Kbd> flip</span>
+                  <span className="flex items-center gap-1.5 mobile:hidden"><Kbd>←</Kbd><Kbd>→</Kbd> move</span>
+                  <span className="flex items-center gap-1.5 mobile:hidden"><Kbd>Space</Kbd> flip</span>
+                  <span className="hidden mobile:inline">Swipe to move · tap to flip</span>
                 </div>
 
                 <CardList
@@ -227,14 +249,14 @@ function FolderSidebar({
   const sorted = [...folders].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <aside className="sticky top-28 self-start">
+    <aside className="sticky top-28 self-start mobile:static">
       <h2 className="mb-3 px-3 text-sm font-medium text-muted">Folders</h2>
-      <ul className="space-y-0.5">
+      <ul className="space-y-0.5 mobile:-mx-4 mobile:flex mobile:gap-2 mobile:space-y-0 mobile:overflow-x-auto mobile:px-4 mobile:pb-1">
         {sorted.map((f) => (
-          <li key={f._id}>
+          <li key={f._id} className="mobile:shrink-0">
             <button
               onClick={() => onSelect(f._id)}
-              className={`relative w-full truncate rounded-lg px-3 py-2 text-left text-[15px] transition ${
+              className={`relative w-full truncate rounded-lg px-3 py-2 text-left text-[15px] transition mobile:w-auto mobile:whitespace-nowrap mobile:border mobile:border-line ${
                 f._id === selected ? "font-semibold" : "text-muted hover:bg-ink/5 hover:text-ink"
               }`}
             >
@@ -254,7 +276,7 @@ function FolderSidebar({
         {!loading && !folders.length && <li className="px-3 py-2 text-sm text-muted">No folders yet.</li>}
       </ul>
 
-      <form onSubmit={create} className="mt-5 flex gap-2 border-t border-line pt-5">
+      <form onSubmit={create} className="mt-5 flex gap-2 border-t border-line pt-5 mobile:mt-3 mobile:border-t-0 mobile:pt-0">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New folder" required className={`${inputClass} h-9 text-sm`} />
         <Button size="sm" variant="secondary" className="h-9" aria-label="Create folder">Add</Button>
       </form>
@@ -268,7 +290,7 @@ function ArrowButton({ dir, onClick }: { dir: 1 | -1; onClick: () => void }) {
     <button
       onClick={onClick}
       aria-label={dir === 1 ? "Next card" : "Previous card"}
-      className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-card text-muted transition hover:border-muted hover:text-ink active:scale-90"
+      className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line bg-card text-muted transition hover:border-muted hover:text-ink active:scale-90 mobile:hidden"
     >
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
         <path d={dir === 1 ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} strokeLinecap="round" strokeLinejoin="round" />
@@ -289,23 +311,29 @@ function CardList({
       <Panel className="divide-y divide-line overflow-hidden">
         <AnimatePresence initial={false}>
           {cards.map((c, i) => (
+            // The outer row only animates height and opacity; padding and the hover
+            // color live on the inner row so CSS transitions never fight Motion.
             <motion.div
               key={c._id}
-              layout
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className={`group grid grid-cols-[2.5rem_1fr_1fr_auto] items-center gap-4 px-4 py-3 transition ${
-                c._id === currentId ? "bg-ink/[0.04] shadow-[inset_3px_0_var(--hl)]" : "hover:bg-ink/[0.03]"
-              }`}
+              transition={{ duration: 0.2, ease: EASE_OUT }}
+              className="overflow-hidden"
             >
-              <span className="text-sm tabular-nums text-muted">{i + 1}</span>
-              <button onClick={() => onOpen(i)} className="truncate text-left font-medium">{c.question}</button>
-              <button onClick={() => onOpen(i)} className="truncate text-left text-muted">{c.answer}</button>
-              <span className="flex gap-1 opacity-60 transition group-hover:opacity-100">
-                <Button size="sm" variant="ghost" onClick={() => onEdit(c)}>Edit</Button>
-                <Button size="sm" variant="ghost" className="hover:text-bad" onClick={() => onDelete(c)}>Delete</Button>
-              </span>
+              <div
+                className={`group grid grid-cols-[2.5rem_1fr_1fr_auto] items-center gap-4 px-4 py-3 transition-[background-color,box-shadow] mobile:grid-cols-[1.25rem_minmax(0,1fr)_auto] mobile:gap-x-3 mobile:gap-y-0.5 mobile:px-3 ${
+                  c._id === currentId ? "bg-ink/[0.04] shadow-[inset_3px_0_var(--hl)]" : "hover:bg-ink/[0.03]"
+                }`}
+              >
+                <span className="text-sm tabular-nums text-muted mobile:row-span-2 mobile:self-start mobile:pt-0.5">{i + 1}</span>
+                <button onClick={() => onOpen(i)} className="truncate text-left font-medium">{c.question}</button>
+                <button onClick={() => onOpen(i)} className="truncate text-left text-muted mobile:col-start-2 mobile:row-start-2 mobile:text-sm">{c.answer}</button>
+                <span className="flex gap-1 opacity-60 transition-opacity group-hover:opacity-100 mobile:col-start-3 mobile:row-span-2 mobile:row-start-1 mobile:opacity-100">
+                  <Button size="sm" variant="ghost" onClick={() => onEdit(c)}>Edit</Button>
+                  <Button size="sm" variant="ghost" className="hover:text-bad" onClick={() => onDelete(c)}>Delete</Button>
+                </span>
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>
@@ -319,7 +347,7 @@ function EmptyState({ title, body, children }: { title: string; body: string; ch
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="index-card mx-auto mt-4 max-w-[640px] rounded-xl border border-dashed border-line px-10 pb-12 pt-20 text-center"
+      className="index-card mx-auto mt-4 max-w-[40rem] rounded-xl border border-dashed border-line px-10 pb-12 pt-20 text-center mobile:px-6 mobile:pt-16"
     >
       <h2 className="font-card text-3xl">{title}</h2>
       {body && <p className="mx-auto mt-3 max-w-md text-muted">{body}</p>}
@@ -329,6 +357,18 @@ function EmptyState({ title, body, children }: { title: string; body: string; ch
 }
 
 /* ── Dialogs ────────────────────────────────────────────── */
+
+/**
+ * Calls `reset` in the same render where `open` turns true. Resetting in an effect
+ * instead lets the dialog paint one frame with the previous card's text first.
+ */
+function useResetOnOpen(open: boolean, reset: () => void) {
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) reset();
+  }
+}
 
 function CardDialog({
   open, card, folderId, onClose, onSaved,
@@ -340,10 +380,9 @@ function CardDialog({
   const [a, setA] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const questionRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    if (open) { setQ(card?.question ?? ""); setA(card?.answer ?? ""); setError(null); }
-  }, [open, card]);
+  useResetOnOpen(open, () => { setQ(card?.question ?? ""); setA(card?.answer ?? ""); setError(null); });
 
   const save = async (e: FormEvent, keepOpen = false) => {
     e.preventDefault();
@@ -353,7 +392,7 @@ function CardDialog({
         ? await api<Card>(`/api/flashcards/${card._id}`, "PATCH", { question: q, answer: a })
         : await api<Card>("/api/flashcards", "POST", { question: q, answer: a, folder: folderId });
       onSaved(saved, !card);
-      if (keepOpen) { setQ(""); setA(""); } else onClose();
+      if (keepOpen) { setQ(""); setA(""); questionRef.current?.focus(); } else onClose();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -367,7 +406,7 @@ function CardDialog({
     <Modal open={open} onClose={onClose} title={card ? "Edit card" : "Add card"}>
       <form onSubmit={save} className="space-y-4">
         <Field label="Question">
-          <textarea autoFocus rows={3} value={q} onChange={(e) => setQ(e.target.value)} required className={area} />
+          <textarea ref={questionRef} autoFocus rows={3} value={q} onChange={(e) => setQ(e.target.value)} required className={area} />
         </Field>
         <Field label="Answer">
           <textarea rows={3} value={a} onChange={(e) => setA(e.target.value)} required className={area} />
@@ -395,7 +434,7 @@ function PdfDialog({
   const [message, setMessage] = useState("");
   const [dragging, setDragging] = useState(false);
 
-  useEffect(() => { if (open) { setFile(null); setStatus("idle"); setMessage(""); } }, [open]);
+  useResetOnOpen(open, () => { setFile(null); setStatus("idle"); setMessage(""); });
 
   const upload = async () => {
     if (!file) return;
@@ -448,7 +487,7 @@ function RenameDialog({
 }: { open: boolean; folder?: Folder; onClose: () => void; onSaved: (f: Folder) => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { if (open) { setName(folder?.name ?? ""); setError(null); } }, [open, folder]);
+  useResetOnOpen(open, () => { setName(folder?.name ?? ""); setError(null); });
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -483,7 +522,7 @@ function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { if (open) setError(null); }, [open]);
+  useResetOnOpen(open, () => setError(null));
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
