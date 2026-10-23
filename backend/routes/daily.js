@@ -2,10 +2,14 @@ const express = require("express");
 const Flashcard = require("../models/Flashcard");
 const Folder = require("../models/Folder");
 const auth = require("../middleware/auth");
-const { nextSchedule, todayBounds, MAX_REVIEW, MAX_NEW } = require("../lib/schedule");
+const { nextSchedule, todayBounds, parseTzOffset, MAX_REVIEW, MAX_NEW } = require("../lib/schedule");
 
 const router = express.Router();
 
+// GET /api/daily?tz=<Date#getTimezoneOffset()>
+// Reviews: cards seen before and due by the end of the user's today.
+// New: never-reviewed cards, up to MAX_NEW per day in total, not per request,
+// so opening Daily again the same day doesn't hand out a fresh batch.
 router.get("/daily", auth, async (req, res) => {
   try {
     const scheduled = await Folder.find({ user: req.user._id, schedule: true })
@@ -13,24 +17,33 @@ router.get("/daily", auth, async (req, res) => {
       .sort({ name: 1 })
       .lean();
     const folderIds = scheduled.map((f) => f._id);
-    const { end: endOfToday } = todayBounds();
+    const { start: startOfToday, end: endOfToday } = todayBounds(new Date(), parseTzOffset(req.query.tz));
     const baseMatch = { user: req.user._id };
     if (folderIds.length) baseMatch.folder = { $in: folderIds };
 
     const review = await Flashcard.find({
       ...baseMatch,
       due: { $lte: endOfToday },
-      reps: { $gt: 0 },
+      lastReviewedAt: { $ne: null },
     })
       .select("_id question answer folder ease interval reps lapses due")
       .sort({ due: 1, _id: 1 })
       .limit(MAX_REVIEW)
       .lean();
 
-    const news = await Flashcard.find({ ...baseMatch, reps: 0 })
-      .select("_id question answer folder ease interval reps lapses due")
-      .limit(MAX_NEW)
-      .lean();
+    const startedToday = await Flashcard.countDocuments({
+      user: req.user._id,
+      firstReviewedAt: { $gte: startOfToday, $lte: endOfToday },
+    });
+    const newLeft = Math.max(0, MAX_NEW - startedToday);
+
+    const news = newLeft
+      ? await Flashcard.find({ ...baseMatch, lastReviewedAt: null })
+          .select("_id question answer folder ease interval reps lapses due")
+          .sort({ _id: 1 })
+          .limit(newLeft)
+          .lean()
+      : [];
 
     res.json({ review, news });
   } catch (e) {
@@ -47,7 +60,7 @@ router.post("/review", auth, async (req, res) => {
 
     const card = await Flashcard.findOne(
       { _id: cardId, user: req.user._id },
-      "ease interval reps lapses due"
+      "ease interval reps lapses due lastReviewedAt firstReviewedAt"
     );
     if (!card) return res.status(404).json({ error: "not found" });
 

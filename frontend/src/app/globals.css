@@ -1,5 +1,18 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
+/* Phone layout (AppShell sets <html data-mobile>). :is() rather than :where() so these
+   styles win over the desktop and lg: classes on the same element. */
+@custom-variant mobile (&:is([data-mobile] *));
+
+/* Desktop scales with the window: the root font size maps 1024px → 14px up to
+   1440px → 16px, clamped at both ends, and every rem-based size follows.
+   The phone layout stays at 16px. */
+html {
+  font-size: clamp(14px, calc(14px + 2 * (100vw - 1024px) / 416), 16px);
+}
+html[data-mobile] {
+  font-size: 16px;
+}
 
 /* Nandemo look: a study desk with index cards and a yellow highlighter.
    Change colors here and every page follows. */
@@ -17,6 +30,8 @@
   --info: #2f6fd6;
   --rule-red: #e88a8f;
   --rule-blue: #dbe5f3;
+  /* Strong ease-out for entrances, exits and the card flip (EASE_OUT in ui.tsx) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .dark {
@@ -33,6 +48,25 @@
   --info: #6b9cf0;
   --rule-red: #6b3438;
   --rule-blue: #232a39;
+}
+
+/* The app pages swap the yellow highlighter for blue in light mode, logo included.
+   AppShell sets data-accent on those pages. */
+:root:not(.dark) [data-accent="blue"] {
+  --hl: #6aa6ff;
+  --hl-ink: #0c2246;
+}
+
+/* White paper that stays white in dark mode: light-theme colours for this element
+   and everything inside it. */
+.paper {
+  --card: #ffffff;
+  --ink: #172036;
+  --muted: #5b6478;
+  --line: #d3d9e2;
+  --rule-red: #e88a8f;
+  --rule-blue: #dbe5f3;
+  color: var(--ink);
 }
 
 @theme inline {
@@ -72,4 +106,81 @@ body {
   background-size: 100% 2px, 100% 100%;
   background-position: 0 56px, 0 58px;
   background-repeat: no-repeat;
+}
+
+/* FlipCard. Both faces carry their own 3D transform and the turning element
+   stays on its own layer, so neither face flashes at the start or end of a turn. */
+.flip-card {
+  perspective: 1400px;
+}
+.flip-card-inner {
+  transform: rotateY(0deg);
+  transform-style: preserve-3d;
+  transition: transform 500ms var(--ease-out);
+  will-change: transform;
+}
+.flip-card[data-flipped] .flip-card-inner {
+  transform: rotateY(180deg);
+}
+.flip-face {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: rotateY(0deg);
+}
+.flip-face-back {
+  transform: rotateY(180deg);
+}
+
+/* Modal: fades and settles in from @starting-style when it mounts, and back out when
+   data-closing is set (Modal unmounts it once MODAL_CLOSE_MS in ui.tsx has passed). */
+.modal-backdrop {
+  transition: opacity 200ms var(--ease-out);
+}
+.modal-panel {
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+@starting-style {
+  .modal-backdrop {
+    opacity: 0;
+  }
+  .modal-panel {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+}
+.modal-backdrop[data-closing] {
+  opacity: 0;
+  pointer-events: none;
+}
+.modal-backdrop[data-closing] .modal-panel {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-panel,
+  .modal-backdrop[data-closing] .modal-panel {
+    transform: none;
+  }
+}
+
+/* Reduced motion: crossfade the two faces instead of turning the card. */
+@media (prefers-reduced-motion: reduce) {
+  .flip-card-inner,
+  .flip-card[data-flipped] .flip-card-inner,
+  .flip-face,
+  .flip-face-back {
+    transform: none;
+  }
+  .flip-card-inner {
+    transition: none;
+  }
+  .flip-face {
+    transition: opacity 200ms ease;
+  }
+  .flip-card[data-flipped] .flip-face-front,
+  .flip-card:not([data-flipped]) .flip-face-back {
+    opacity: 0;
+  }
 }

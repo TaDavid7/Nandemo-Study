@@ -64,7 +64,7 @@ export default function SpeedrunPage() {
               value={custom}
               onChange={(e) => setCustom(e.target.value.replace(/\D/g, ""))}
               placeholder="Custom (sec)"
-              className={`${inputClass} h-9 w-36 text-sm ${custom ? "border-hl" : ""}`}
+              className={`${inputClass} h-9 w-36 text-sm mobile:text-base ${custom ? "border-hl" : ""}`}
             />
           </div>
         </div>
@@ -182,7 +182,7 @@ function Game({ cards, seconds, onExit }: { cards: Card[]; seconds: number; onEx
   const urgent = left <= 10;
 
   return (
-    <div className="mx-auto max-w-[680px]">
+    <div className="mx-auto max-w-[42.5rem]">
       <div className="mb-6 flex items-center justify-between">
         <Button variant="ghost" size="sm" onClick={() => setOver(true)}>Finish early</Button>
         <div className="flex gap-5 text-sm tabular-nums">
@@ -203,7 +203,7 @@ function Game({ cards, seconds, onExit }: { cards: Card[]; seconds: number; onEx
           key={urgent ? left : "calm"}
           initial={urgent ? { scale: 1.3 } : false}
           animate={{ scale: 1 }}
-          className={`w-20 text-right text-3xl font-bold tabular-nums ${urgent ? "text-bad" : ""}`}
+          className={`w-20 text-right text-3xl font-bold tabular-nums mobile:w-14 mobile:text-2xl ${urgent ? "text-bad" : ""}`}
         >
           {fmt(left)}
         </motion.span>
@@ -211,7 +211,7 @@ function Game({ cards, seconds, onExit }: { cards: Card[]; seconds: number; onEx
 
       <motion.div animate={controls}>
         <div
-          className={`index-card relative flex h-[260px] items-center justify-center rounded-xl border px-10 text-center shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)] transition-colors ${
+          className={`index-card relative flex h-[16.25rem] items-center justify-center rounded-xl border px-10 text-center mobile:h-[12rem] mobile:px-6 mobile:pt-12 shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)] transition-colors ${
             reveal !== null ? "border-bad" : "border-line"
           }`}
         >

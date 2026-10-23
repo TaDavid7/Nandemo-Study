@@ -11,10 +11,12 @@ const flashcardSchema = new mongoose.Schema({
     lapses: { type: Number, default: 0 },
     due: { type: Date, default: () => new Date() },
     lastReviewedAt: { type: Date},
+    firstReviewedAt: { type: Date }, // day the card left the "new" pile (daily new-card limit)
 });
 
 flashcardSchema.index({ user: 1, due: 1 });
 flashcardSchema.index({ user: 1, reps: 1 });
+flashcardSchema.index({ user: 1, firstReviewedAt: 1 });
 flashcardSchema.index({ user: 1, folder: 1, due: 1 });
 module.exports = mongoose.model('Flashcard', flashcardSchema);
 

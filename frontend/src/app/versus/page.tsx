@@ -75,7 +75,7 @@ export default function VersusPage() {
 
       {error && <div className="mb-6 max-w-2xl"><Notice>{error}</Notice></div>}
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-6 mobile:grid-cols-1 mobile:gap-4">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <Panel className="flex h-full flex-col p-7">
             <h2 className="text-xl font-semibold">Host a match</h2>
