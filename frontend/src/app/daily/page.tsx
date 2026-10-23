@@ -78,7 +78,8 @@ function Session({ onExit }: { onExit: () => void }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api<{ review?: Card[]; news?: Card[] }>("/api/daily")
+    // tz lets the server count "today" in the user's timezone, not its own
+    api<{ review?: Card[]; news?: Card[] }>(`/api/daily?tz=${new Date().getTimezoneOffset()}`)
       .then(({ review = [], news = [] }) => {
         setReview(review);
         setNews(news);

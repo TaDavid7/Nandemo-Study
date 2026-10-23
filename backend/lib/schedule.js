@@ -6,12 +6,29 @@ function addDays(d, days) {
   return x;
 }
 
-function todayBounds(now = new Date()) {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
+// Start and end of the user's current day. `tzOffset` is the browser's
+// Date#getTimezoneOffset() (minutes behind UTC). Without it the server's own
+// day is used, which on a UTC server starts mid-afternoon in the Americas.
+function todayBounds(now = new Date(), tzOffset) {
+  if (!Number.isFinite(tzOffset)) {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+  }
+  // Shift to the user's wall clock, take midnight there, then shift back.
+  const wall = new Date(now.getTime() - tzOffset * 60000);
+  wall.setUTCHours(0, 0, 0, 0);
+  const start = new Date(wall.getTime() + tzOffset * 60000);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
   return { start, end };
+}
+
+/** Reads a browser timezone offset from a query string; undefined if missing or invalid. */
+function parseTzOffset(value) {
+  const n = Number(value);
+  return value !== undefined && value !== "" && Number.isFinite(n) && Math.abs(n) <= 14 * 60 ? n : undefined;
 }
 
 // grade: 0=Again, 1=Hard, 2=Good, 3=Easy
@@ -37,10 +54,13 @@ function nextSchedule(card, grade, now = new Date()) {
     interval = Math.max(1, Math.round(interval * ease));
   }
 
-  return { ease, interval, reps, lapses, due: addDays(now, interval), lastReviewedAt: now };
+  // Again sets reps back to 0, so "new" means never reviewed (no lastReviewedAt),
+  // not reps === 0. firstReviewedAt is what the daily new-card limit counts.
+  const firstReview = card.lastReviewedAt ? {} : { firstReviewedAt: now };
+  return { ease, interval, reps, lapses, due: addDays(now, interval), lastReviewedAt: now, ...firstReview };
 }
 
 const MAX_REVIEW = 60;
 const MAX_NEW = 20;
 
-module.exports = { nextSchedule, todayBounds, MAX_REVIEW, MAX_NEW };
+module.exports = { nextSchedule, todayBounds, parseTzOffset, MAX_REVIEW, MAX_NEW };
