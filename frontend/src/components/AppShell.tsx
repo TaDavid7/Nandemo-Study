@@ -67,7 +67,7 @@ function useLayoutMode() {
     setMode({ ...mode, override });
   };
 
-  return { mobile: mobile ?? false, ready: mode !== null, toggle };
+  return { mobile: mobile ?? false, narrow: mode?.narrow ?? false, ready: mode !== null, toggle };
 }
 
 /* ── Header pieces ────────────────────────────────────── */
@@ -219,6 +219,24 @@ function TabBar() {
   );
 }
 
+/** Desktop layout forced on a phone: the header doesn't fit, so its layout button can end up
+ *  off-screen. This keeps a way back in reach. */
+function BackToMobile({ onClick }: { onClick: () => void }) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      onClick={onClick}
+      className="fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 flex h-11 items-center gap-2 rounded-full bg-ink px-4 text-sm font-medium text-card shadow-lg"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]">
+        <path d="M7 2h10v20H7zM11 18h2" />
+      </svg>
+      Back to mobile layout
+    </motion.button>
+  );
+}
+
 // App pages that use a blue highlighter in light mode (see [data-accent] in globals.css).
 const blueAccentPages = ["/home", "/daily", "/speedrun", "/versus"];
 
@@ -242,6 +260,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               {children}
             </main>
             <TabBar />
+            {layout.ready && layout.narrow && !layout.mobile && <BackToMobile onClick={layout.toggle} />}
           </div>
         </MobileContext.Provider>
       </MotionConfig>

@@ -636,7 +636,7 @@ function Closing() {
 function SignUpLinks({ className = "" }: { className?: string }) {
   return (
     <div className={`flex flex-wrap gap-3 ${className}`}>
-      <Link href="/account" className="inline-flex h-12 items-center rounded-lg bg-ink px-6 font-medium text-card transition hover:opacity-90">
+      <Link href="/account?mode=signup" className="inline-flex h-12 items-center rounded-lg bg-ink px-6 font-medium text-card transition hover:opacity-90">
         Create a free account
       </Link>
       <Link href="/account" className="inline-flex h-12 items-center rounded-lg border border-line bg-card px-6 font-medium transition hover:border-muted">

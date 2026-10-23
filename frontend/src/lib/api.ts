@@ -26,14 +26,26 @@ export type Card = {
 
 export type RoomPlayer = { socketId: string; username: string; score: number };
 
+/** "first": first correct answer takes the point. "timed": everyone gets `seconds`, every correct answer scores. */
+export type VersusSettings = { mode: "first" | "timed"; seconds: number };
+
 export type RoomState = {
   code: string;
   hostId: string;
   folderId: string | null;
+  settings: VersusSettings;
   started: boolean;
+  finished: boolean;
   currentIndex: number;
+  totalQuestions: number;
+  /** socketIds that answered the current question, in order */
+  solvedBy: string[];
+  /** timed mode: ms left on the current question when this state was sent */
+  remainingMs: number | null;
   players: RoomPlayer[];
   currentQuestion?: { id: string; question: string } | null;
+  /** the current answer, once it's been revealed */
+  answer: string | null;
 };
 
 /* ── Auth ──────────────────────────────────────────────── */
@@ -43,6 +55,9 @@ export const getToken = () =>
 
 export const getUsername = () =>
   typeof window === "undefined" ? null : localStorage.getItem("username");
+
+/** The sign-in page, set to come back here afterwards. */
+const signInUrl = () => `/account?next=${encodeURIComponent(window.location.pathname)}`;
 
 /** fetch() with the auth header. Sends the user to sign in if the session is gone. */
 export async function authfetch(url: string, options: RequestInit = {}) {
@@ -56,7 +71,7 @@ export async function authfetch(url: string, options: RequestInit = {}) {
   });
   if (res.status === 401 && typeof window !== "undefined") {
     localStorage.removeItem("token");
-    window.location.href = "/account";
+    window.location.href = signInUrl();
   }
   return res;
 }
@@ -73,11 +88,11 @@ export async function api<T>(url: string, method = "GET", body?: unknown): Promi
   return data as T;
 }
 
-/** Redirects to /account when there's no token. Returns true once signed in. */
+/** Redirects to sign in when there's no token. Returns true once signed in. */
 export function useRequireAuth() {
   const [ok, setOk] = useState(false);
   useEffect(() => {
-    if (!getToken()) window.location.href = "/account";
+    if (!getToken()) window.location.href = signInUrl();
     else setOk(true);
   }, []);
   return ok;

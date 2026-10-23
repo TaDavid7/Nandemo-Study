@@ -1,9 +1,12 @@
 "use client";
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { api, authfetch, Card, Folder, useCards, useFolders, useRequireAuth } from "@/lib/api";
 import { Button, EASE_OUT, Field, FlipCard, Kbd, Modal, Notice, Panel, inputClass } from "@/components/ui";
 import { useMobile } from "@/components/AppShell";
+
+/** Which way the deck last moved, and whether a swipe did it. */
+type Move = { dir: number; swipe: boolean };
 
 type Dialog =
   | { kind: "card"; card?: Card }
@@ -19,7 +22,7 @@ export default function DecksPage() {
   const [folderId, setFolderId] = useState("");
   const { cards, setCards, reload } = useCards(folderId);
   const [index, setIndex] = useState(0);
-  const [direction, setDirection] = useState(1);
+  const [direction, setDirection] = useState<Move>({ dir: 1, swipe: false });
   const [flipped, setFlipped] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const mobile = useMobile();
@@ -41,9 +44,9 @@ export default function DecksPage() {
     setFlipped(false);
   }, [folderId]);
 
-  const go = (step: number) => {
+  const go = (step: number, swipe = false) => {
     if (!cards.length) return;
-    setDirection(step);
+    setDirection({ dir: step, swipe });
     setFlipped(false);
     setIndex((i) => (i + step + cards.length) % cards.length);
   };
@@ -113,33 +116,28 @@ export default function DecksPage() {
                         custom={direction}
                         className="absolute inset-0"
                         variants={{
-                          enter: (d: number) => ({ x: d * 80, opacity: 0, rotate: d * 3 }),
+                          enter: ({ dir }: Move) => ({ x: dir * 80, opacity: 0, rotate: dir * 3 }),
                           center: { x: 0, opacity: 1, rotate: 0 },
-                          exit: (d: number) => ({ x: d * -140, opacity: 0, rotate: d * -6 }),
+                          // A swiped card is already flying off under the finger (see Swipeable), so it only fades.
+                          exit: ({ dir, swipe }: Move) =>
+                            swipe
+                              ? { opacity: 0, transition: { duration: 0.25, ease: EASE_OUT } }
+                              : { x: dir * -140, opacity: 0, rotate: dir * -6 },
                         }}
                         initial="enter"
                         animate="center"
                         exit="exit"
                         transition={{ type: "spring", stiffness: 380, damping: 34 }}
-                        // Phone: swipe left for the next card, right for the previous one.
-                        drag={mobile ? "x" : false}
-                        dragConstraints={{ left: 0, right: 0 }}
-                        dragElastic={0.5}
-                        dragSnapToOrigin
-                        onDragStart={() => { swiping.current = true; }}
-                        onDragEnd={(_, info) => {
-                          if (info.offset.x < -70 || info.velocity.x < -500) go(1);
-                          else if (info.offset.x > 70 || info.velocity.x > 500) go(-1);
-                          setTimeout(() => { swiping.current = false; }, 0);
-                        }}
                       >
-                        <FlipCard
-                          className="h-full"
-                          front={current.question}
-                          back={current.answer}
-                          flipped={flipped}
-                          onFlip={() => { if (!swiping.current) setFlipped((f) => !f); }}
-                        />
+                        <Swipeable enabled={mobile} swiping={swiping} onSwipe={(step) => go(step, true)}>
+                          <FlipCard
+                            className="h-full"
+                            front={current.question}
+                            back={current.answer}
+                            flipped={flipped}
+                            onFlip={() => { if (!swiping.current) setFlipped((f) => !f); }}
+                          />
+                        </Swipeable>
                       </motion.div>
                     </AnimatePresence>
                   </div>
@@ -156,7 +154,7 @@ export default function DecksPage() {
                 <CardList
                   cards={cards}
                   currentId={current._id}
-                  onOpen={(i) => { setDirection(i > index ? 1 : -1); setIndex(i); setFlipped(false); }}
+                  onOpen={(i) => { setDirection({ dir: i > index ? 1 : -1, swipe: false }); setIndex(i); setFlipped(false); }}
                   onEdit={(card) => setDialog({ kind: "card", card })}
                   onDelete={(card) => setDialog({ kind: "deleteCard", card })}
                 />
@@ -184,7 +182,7 @@ export default function DecksPage() {
         onClose={() => setDialog(null)}
         onSaved={(saved, isNew) => {
           setCards((all) => (isNew ? [...all, saved] : all.map((c) => (c._id === saved._id ? saved : c))));
-          if (isNew) { setDirection(1); setIndex(cards.length); setFlipped(false); }
+          if (isNew) { setDirection({ dir: 1, swipe: false }); setIndex(cards.length); setFlipped(false); }
         }}
       />
       <PdfDialog open={dialog?.kind === "pdf"} folderId={folderId} onClose={() => setDialog(null)} onImported={reload} />
@@ -282,6 +280,51 @@ function FolderSidebar({
       </form>
       {error && <div className="mt-2"><Notice>{error}</Notice></div>}
     </aside>
+  );
+}
+
+// A swipe counts once the card would end up this far from centre, counting a flick's speed.
+const SWIPE_DISTANCE = 90;
+const FLICK_SECONDS = 0.2;
+
+/** Phone: the card follows your finger sideways. Swipe left for the next card, right for the previous one. */
+function Swipeable({
+  enabled,
+  swiping,
+  onSwipe,
+  children,
+}: {
+  enabled: boolean;
+  swiping: React.RefObject<boolean>;
+  onSwipe: (step: 1 | -1) => void;
+  children: React.ReactNode;
+}) {
+  const x = useMotionValue(0);
+  // Tilts a little as it moves, like a card held at the bottom edge.
+  const rotate = useTransform(x, [-300, 300], [-8, 8]);
+
+  return (
+    <motion.div
+      className="h-full"
+      style={{ x, rotate }}
+      drag={enabled ? "x" : false}
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={1} // follows the finger 1:1
+      dragTransition={{ bounceStiffness: 500, bounceDamping: 34 }} // springs back when you don't swipe far enough
+      onDragStart={() => { swiping.current = true; }}
+      onDragEnd={(_, { offset, velocity }) => {
+        const landing = offset.x + velocity.x * FLICK_SECONDS;
+        const step = landing < -SWIPE_DISTANCE ? 1 : landing > SWIPE_DISTANCE ? -1 : 0;
+        if (step) {
+          // Keep going off-screen at the speed it was thrown, instead of springing back first.
+          animate(x, step * -window.innerWidth, { type: "spring", velocity: velocity.x, stiffness: 220, damping: 30 });
+          onSwipe(step);
+        }
+        setTimeout(() => { swiping.current = false; }, 0);
+      }}
+    >
+      {children}
+    </motion.div>
   );
 }
 

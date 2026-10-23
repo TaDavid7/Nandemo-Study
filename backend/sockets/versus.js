@@ -2,6 +2,11 @@
 const Flashcard = require("../models/Flashcard");
 const Folder = require("../models/Folder");
 
+// How long the answer stays on screen before the next question.
+const REVEAL_MS = 2500;
+// Seconds per question the host can pick in timed mode.
+const TIME_CHOICES = [10, 20, 30, 60];
+
 function createCode() {
   const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // skip confusing chars if desired
   let s = "";
@@ -16,12 +21,19 @@ function normalize(s) {
 /** rooms: Map<code, Room>
  * Room = {
  *   code, hostId, folderId,
- *   started: boolean,
+ *   settings: { mode: "first" | "timed", seconds: number },
+ *     first: the first correct answer takes the point and ends the question.
+ *     timed: everyone gets `seconds` to answer; every correct answer scores.
+ *   started: boolean, finished: boolean,
  *   currentIndex: number,
- *   // deck holds current game's card IDs + normalized answers for quick checks
- *   deck: Array<{ id: string, answerNorm: string }>,
+ *   // deck holds current game's cards + normalized answers for quick checks
+ *   deck: Array<{ id: string, question: string, answer: string, answerNorm: string }>,
+ *   solvedBy: string[],     // socketIds that answered the current question, in order
+ *   revealed: boolean,      // current answer is showing; next question is on its way
+ *   deadline: number|null,  // timed mode: when the current question closes (ms)
+ *   timer,                  // pending timeout for the deadline or the next question
  *   // players keyed by socketId
- *   players: Map<string, { socketId: string, username: string, score: number, lastScoredIndex: number }>,
+ *   players: Map<string, { socketId: string, username: string, score: number }>,
  * }
  */
 const rooms = new Map();
@@ -31,8 +43,14 @@ function serialize(room) {
     code: room.code,
     hostId: room.hostId,
     folderId: room.folderId,
+    settings: room.settings,
     started: room.started,
+    finished: room.finished,
     currentIndex: room.currentIndex,
+    totalQuestions: room.deck.length,
+    solvedBy: room.solvedBy,
+    // Remaining time rather than the deadline itself, so client clocks don't matter.
+    remainingMs: room.deadline ? Math.max(0, room.deadline - Date.now()) : null,
     players: Array.from(room.players.values()).map(p => ({
       socketId: p.socketId,
       username: p.username,
@@ -42,18 +60,68 @@ function serialize(room) {
 }
 
 function broadcastState(io, room) {
-  const q = room.deck[room.currentIndex];
+  const q = room.started ? room.deck[room.currentIndex] : null;
   io.to(room.code).emit("roomState", {
     ...serialize(room),
     currentQuestion: q ? { id: q.id, question: q.question } : null,
+    answer: q && room.revealed ? q.answer : null,
   });
+}
+
+function clearTimer(room) {
+  clearTimeout(room.timer);
+  room.timer = null;
+}
+
+function closeRoom(room) {
+  clearTimer(room);
+  rooms.delete(room.code);
+}
+
+function startQuestion(io, room) {
+  clearTimer(room);
+  room.solvedBy = [];
+  room.revealed = false;
+  room.deadline = null;
+  if (room.settings.mode === "timed") {
+    const ms = room.settings.seconds * 1000;
+    room.deadline = Date.now() + ms;
+    room.timer = setTimeout(() => endQuestion(io, room), ms);
+  }
+  broadcastState(io, room);
+}
+
+// Shows everyone the answer, then moves on by itself.
+function endQuestion(io, room) {
+  if (!room.started || room.revealed) return;
+  clearTimer(room);
+  room.revealed = true;
+  room.deadline = null;
+  broadcastState(io, room);
+  room.timer = setTimeout(() => nextOrFinish(io, room), REVEAL_MS);
+}
+
+function nextOrFinish(io, room) {
+  clearTimer(room);
+  if (room.currentIndex < room.deck.length - 1) {
+    room.currentIndex += 1;
+    startQuestion(io, room);
+  } else {
+    room.started = false;
+    room.finished = true;
+    broadcastState(io, room);
+  }
+}
+
+function everyoneSolved(room) {
+  return room.players.size > 0 && Array.from(room.players.keys()).every(id => room.solvedBy.includes(id));
 }
 
 module.exports = function attachVersus(io) {
   io.on("connection", (socket) => {
     socket.on("createRoom", async ({ folderId, username }, check) => {
       try{
-        
+
         if (!socket.data?.userId) throw new Error("Unauthorized");
         if (!folderId) throw new Error("folderId required");
         const folder = await Folder.findOne({ _id: folderId, user: socket.data.userId }).lean();
@@ -64,9 +132,15 @@ module.exports = function attachVersus(io) {
           hostId: socket.id,
           hostUserId: socket.data.userId,
           folderId: folderId || null,
+          settings: { mode: "first", seconds: 20 },
           started: false,
+          finished: false,
           currentIndex: 0,
           deck: [],
+          solvedBy: [],
+          revealed: false,
+          deadline: null,
+          timer: null,
           players: new Map(),
         };
         rooms.set(code, room);
@@ -76,7 +150,6 @@ module.exports = function attachVersus(io) {
           socketId: socket.id,
           username: (username && String(username).trim()) || "Host",
           score: 0,
-          lastScoredIndex: -1,
           userId: socket.data.userId,
         });
 
@@ -104,18 +177,26 @@ module.exports = function attachVersus(io) {
             room.hostId = socket.id;
       }
       if (username) {
-        room.players.set(socket.id, {
-          socketId: socket.id,
-          username: String(username).trim() || "Player",
-          score: 0,
-          lastScoredIndex: -1,
-          userId: socket.data?.userId,
-        });
+        const name = String(username).trim() || "Player";
+        const existing = room.players.get(socket.id);
+        // Joining again from the room page keeps the score.
+        if (existing) existing.username = name;
+        else room.players.set(socket.id, { socketId: socket.id, username: name, score: 0, userId: socket.data?.userId });
       }
       broadcastState(io, room);
     });
 
-    // Host starts the game; lock a deck order and broadcast index 0
+    // Host picks the game mode in the lobby
+    socket.on("updateSettings", ({ code, mode, seconds }) => {
+      code = String(code || "").toUpperCase();
+      const room = rooms.get(code);
+      if (!room || room.hostId !== socket.id || room.started) return;
+      if (mode === "first" || mode === "timed") room.settings = { ...room.settings, mode };
+      if (TIME_CHOICES.includes(Number(seconds))) room.settings = { ...room.settings, seconds: Number(seconds) };
+      broadcastState(io, room);
+    });
+
+    // Host starts (or restarts) the game; lock a deck order and broadcast index 0
     socket.on("startGame", async ({ code }) => {
       code = String(code || "").toUpperCase();
       const room = rooms.get(code);
@@ -132,9 +213,14 @@ module.exports = function attachVersus(io) {
 
         //Fetch cards from the host's folder
         const cards = await Flashcard
-          .find({ folder: room.folderId, user: hostPlayer.userId }) 
+          .find({ folder: room.folderId, user: hostPlayer.userId })
           .select("_id question answer")
           .lean();
+
+        if (!cards.length) {
+          socket.emit("error", { message: "This folder has no cards to play." });
+          return;
+        }
 
         room.deck = cards.map((c) => ({
           id: String(c._id),
@@ -143,10 +229,12 @@ module.exports = function attachVersus(io) {
           answerNorm: normalize(c.answer),
         }));
 
+        for (const p of room.players.values()) p.score = 0;
         room.currentIndex = 0;
         room.started = true;
+        room.finished = false;
 
-        broadcastState(io, room);
+        startQuestion(io, room);
       } catch (err) {
         console.error("startGame error:", err.message);
         socket.emit("error", { message: "Server error during startGame" });
@@ -158,89 +246,37 @@ module.exports = function attachVersus(io) {
     socket.on("submitGuess", ({ code, guess }) => {
       code = String(code || "").toUpperCase();
       const room = rooms.get(code);
-      if (!room || !room.started) return;
+      if (!room || !room.started || room.revealed) return;
 
       const current = room.deck[room.currentIndex];
       if (!current) return; // no cards
 
       const player = room.players.get(socket.id);
       if (!player) return; // not tracked
+      if (room.solvedBy.includes(socket.id)) return;
 
       const g = normalize(guess);
       const correct = g && g === current.answerNorm;
 
       if (correct) {
-        if (player.lastScoredIndex !== room.currentIndex) {
-          player.score += 1;
-          player.lastScoredIndex = room.currentIndex;
-        }
+        player.score += 1;
+        room.solvedBy.push(socket.id);
         io.to(socket.id).emit("guessResult", { correct: true });
-        broadcastState(io, room);
-        const isLast = room.currentIndex >= room.deck.length - 1;
-        if (isLast) {
-          // prevent any further client-driven advance from racing
-          room.started = false;
-          io.to(code).emit("results", serialize(room));
-        }
-        } else {
+        if (room.settings.mode === "first" || everyoneSolved(room)) endQuestion(io, room);
+        else broadcastState(io, room);
+      } else {
         io.to(socket.id).emit("guessResult", { correct: false });
       }
     });
 
-    socket.on("correctMove", ({code}) => {
-      code = String(code || "").toUpperCase();
-      const room = rooms.get(code);
-      if (!room || !room.started) return;
-      if (room.currentIndex < Math.max(0, room.deck.length - 1)) {
-        room.currentIndex += 1;
-        broadcastState(io, room);
-      }
-      else{
-        io.to(code).emit("results", serialize(room));
-      }
-    });
-
-    // Advance to the next question
+    // Host skips: show the answer now (then it moves on), or move on now if it's already showing
     socket.on("nextQuestion", ({ code }) => {
       code = String(code || "").toUpperCase();
       const room = rooms.get(code);
       if (!room || !room.started) return;
       if (room.hostId !== socket.id) return;
-      if (room.currentIndex < Math.max(0, room.deck.length - 1)) {
-        room.currentIndex += 1;
-        broadcastState(io, room);
-      }
-      else{
-        io.to(code).emit("results", serialize(room));
-      }
-    });
-
-    //Reveal answer
-    socket.on("revealAnswer", ({code}) => {
-      code = String(code || "").toUpperCase();
-      const room = rooms.get(code);
-      if(!room || !room.started) return;
-      if(socket.id !== room.hostId) return;
-
-      const cur = room.deck[room.currentIndex];
-      io.to(code).emit("revealAnswer", {
-        index: room.currentIndex,
-        answer: cur?.answer ?? "",
-      });
-    })
-
-    // Optional for special typecasting
-    socket.on("correctAnswer", ({ code, delta = 1 }) => {
-      code = String(code || "").toUpperCase();
-      const room = rooms.get(code);
-      if (!room || !room.started) return;
-      const p = room.players.get(socket.id);
-      if (!p) return;
-      if (p.lastScoredIndex !== room.currentIndex) {
-        p.score += Number(delta) || 1;
-        p.lastScoredIndex = room.currentIndex;
-        broadcastState(io, room);
-      }
+      if (room.revealed) nextOrFinish(io, room);
+      else endQuestion(io, room);
     });
 
     socket.on("exitGame", ({ code }) => {
@@ -248,7 +284,7 @@ module.exports = function attachVersus(io) {
       const room = rooms.get(code);
       if (!room || room.hostId !== socket.id) return;
 
-      rooms.delete(code);
+      closeRoom(room);
       io.to(code).emit("roomClosed");
       io.socketsLeave(code); // disconnect all from room
     });
@@ -261,9 +297,14 @@ module.exports = function attachVersus(io) {
 
         if (room.hostId === socket.id) {
           const next = room.players.values().next().value;
-          if (next) room.hostId = next.socketId; else { rooms.delete(room.code); continue; }
+          if (next) room.hostId = next.socketId; else { closeRoom(room); continue; }
         }
-        broadcastState(io, room);
+        // In timed mode the question can close early once everyone left has answered
+        if (room.started && !room.revealed && room.settings.mode === "timed" && everyoneSolved(room)) {
+          endQuestion(io, room);
+        } else {
+          broadcastState(io, room);
+        }
       }
     });
   });
