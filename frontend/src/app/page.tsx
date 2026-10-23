@@ -143,7 +143,7 @@ function Hero() {
             <motion.span className="block" {...reveal(0.08)}>Remember it next week.</motion.span>
           </h1>
           <motion.p className="mt-6 max-w-md text-lg text-muted" {...reveal(0.16)}>
-            Nandemo turns your notes into flashcards and schedules each review right before you&apos;d forget it.
+            Tandemo turns your notes into flashcards and schedules each review right before you&apos;d forget it.
           </motion.p>
           <motion.div {...reveal(0.24)}>
             <SignUpLinks className="mt-9" />
@@ -625,7 +625,7 @@ function Closing() {
         </div>
       </motion.div>
       <p className="mt-20 text-center text-sm text-muted">
-        なんでも <span className="font-card italic">(nandemo)</span> means “anything.”
+        Learn something new, every day with Tandemo.
       </p>
     </section>
   );
@@ -688,8 +688,8 @@ function AppWindow({ tab, children }: { tab: string; children: React.ReactNode }
       >
         <div className="flex h-11 items-center justify-between border-b border-line px-4">
           <span className="flex items-center gap-2">
-            <span className="grid h-5 w-5 -rotate-6 place-items-center rounded bg-hl text-[10px] font-bold text-hl-ink">な</span>
-            <span className="text-sm font-semibold tracking-tight">Nandemo</span>
+            <span className="grid h-5 w-5 -rotate-6 place-items-center rounded bg-hl text-[10px] font-bold text-hl-ink">T</span>
+            <span className="text-sm font-semibold tracking-tight">Tandemo</span>
           </span>
           <span className="flex text-xs font-medium">
             {TABS.map((t) => (

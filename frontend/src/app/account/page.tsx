@@ -101,7 +101,7 @@ export default function AccountPage() {
       </Panel>
 
       <p className="mt-5 text-center text-sm text-muted">
-        {login ? "New to Nandemo?" : "Already have an account?"}{" "}
+        {login ? "New to Tandemo?" : "Already have an account?"}{" "}
         <button onClick={() => { setMode(login ? "register" : "login"); setError(null); }} className="font-medium text-ink underline underline-offset-4">
           {login ? "Create an account" : "Sign in"}
         </button>
