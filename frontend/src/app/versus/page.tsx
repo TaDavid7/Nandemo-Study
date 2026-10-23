@@ -65,7 +65,7 @@ export default function VersusPage() {
 
   return (
     <div>
-      <PageHeader title="Versus" sub="Race a friend through the same deck in real time. The first correct answer takes the point." />
+      <PageHeader title="Versus" sub="Race friends through the same deck in real time. Play first-to-answer, or timed rounds where everyone gets a shot." />
 
       <div className="mb-6 max-w-sm">
         <Field label="Your display name">
@@ -79,7 +79,7 @@ export default function VersusPage() {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <Panel className="flex h-full flex-col p-7">
             <h2 className="text-xl font-semibold">Host a match</h2>
-            <p className="mt-1 text-muted">Choose the folder everyone will play.</p>
+            <p className="mt-1 text-muted">Choose the folder everyone will play. You&apos;ll pick the game mode in the lobby.</p>
             <div className="mt-5 flex flex-1 flex-wrap content-start gap-2">
               {folders.map((f) => (
                 <Chip key={f._id} active={folderId === f._id} onClick={() => setFolderId(f._id)}>{f.name}</Chip>

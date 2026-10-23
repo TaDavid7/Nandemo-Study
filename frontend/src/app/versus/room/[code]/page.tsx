@@ -2,8 +2,11 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { getSocket, getUsername, RoomPlayer, RoomState, useRequireAuth } from "@/lib/api";
-import { Button, Notice, Panel, inputClass } from "@/components/ui";
+import { getSocket, getUsername, RoomPlayer, RoomState, useRequireAuth, VersusSettings } from "@/lib/api";
+import { Button, Chip, Notice, Panel, inputClass } from "@/components/ui";
+
+// Same choices the server accepts (TIME_CHOICES in backend/sockets/versus.js).
+const TIME_CHOICES = [10, 20, 30, 60];
 
 export default function VersusRoomPage() {
   const signedIn = useRequireAuth();
@@ -12,14 +15,19 @@ export default function VersusRoomPage() {
 
   const [socketId, setSocketId] = useState("");
   const [room, setRoom] = useState<RoomState | null>(null);
-  const [answer, setAnswer] = useState<string | null>(null);
   const [guess, setGuess] = useState("");
-  const [feedback, setFeedback] = useState<"idle" | "right" | "wrong">("idle");
-  const [results, setResults] = useState<RoomState | null>(null);
+  const [wrong, setWrong] = useState(false);
+  // Timed mode: when the current question closes, on this device's clock.
+  const [deadline, setDeadline] = useState<number | null>(null);
   const [connecting, setConnecting] = useState(true);
   const [closed, setClosed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const socketRef = useRef<ReturnType<typeof getSocket> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Which question the guess box belongs to. The guess only clears when this changes,
+  // not on every update (someone else scoring used to wipe what you were typing).
+  const questionKey = useRef("");
 
   useEffect(() => {
     if (!signedIn) return;
@@ -31,15 +39,18 @@ export default function VersusRoomPage() {
       connect: () => setSocketId(socket.id || ""),
       disconnect: () => setSocketId(""),
       roomState: (rs: RoomState) => {
+        const key = rs.started ? `${rs.currentIndex}:${rs.currentQuestion?.id}` : "";
+        if (key !== questionKey.current) {
+          questionKey.current = key;
+          setGuess("");
+          setWrong(false);
+        }
+        setDeadline(rs.remainingMs != null ? Date.now() + rs.remainingMs : null);
         setRoom(rs);
-        setResults(null);
-        setAnswer(null);
-        setGuess("");
-        setFeedback("idle");
+        setError(null);
       },
-      revealAnswer: (p: { answer: string }) => setAnswer(p.answer),
-      guessResult: (r: { correct: boolean }) => setFeedback(r.correct ? "right" : "wrong"),
-      results: (rs: RoomState) => setResults(rs),
+      guessResult: (r: { correct: boolean }) => setWrong(!r.correct),
+      error: (e: { message?: string }) => setError(e?.message || "Something went wrong."),
       roomClosed: () => { setClosed(true); setTimeout(() => router.push("/versus"), 2000); },
     };
     Object.entries(handlers).forEach(([e, h]) => socket.on(e, h));
@@ -59,10 +70,32 @@ export default function VersusRoomPage() {
   const isHost = !!room && !!socketId && room.hostId === socketId;
   const players = useMemo(() => [...(room?.players ?? [])].sort((a, b) => b.score - a.score), [room]);
 
+  const question = room?.started ? room.currentQuestion : null;
+  const answer = room?.answer ?? null;
+  const timed = room?.settings.mode === "timed";
+  const solved = !!room && room.solvedBy.includes(socketId);
+  const locked = answer !== null || solved;
+
+  // Back to the guess box whenever a new question opens.
+  useEffect(() => {
+    if (!locked) inputRef.current?.focus();
+  }, [locked, room?.currentIndex]);
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (guess.trim()) emit("submitGuess", { guess });
+    if (guess.trim() && !locked) emit("submitGuess", { guess });
   };
+
+  const status = (() => {
+    if (!room) return "";
+    if (solved) return timed && answer === null ? "Correct! Waiting for the others…" : "Correct! Point is yours.";
+    if (answer !== null) {
+      const first = room.players.find((p) => p.socketId === room.solvedBy[0]);
+      if (timed) return `${room.solvedBy.length} of ${room.players.length} got it.`;
+      return first ? `${first.username} got it first.` : "Nobody got this one.";
+    }
+    return wrong ? "Not quite. Try again." : "";
+  })();
 
   if (!signedIn) return null;
 
@@ -74,34 +107,39 @@ export default function VersusRoomPage() {
           <p className="mt-1.5 text-muted">
             Room <span className="font-semibold tracking-widest text-ink">{code}</span>
             <span className="mx-2">·</span>
-            {results ? "Finished" : room?.started ? "Live" : "Waiting in lobby"}
+            {room?.finished ? "Finished" : room?.started ? "Live" : "Waiting in lobby"}
             {isHost && <span className="ml-2 rounded bg-hl px-1.5 py-0.5 text-xs font-semibold text-hl-ink">You&apos;re hosting</span>}
           </p>
         </div>
-        {isHost && (room?.started || results) && (
+        {isHost && (room?.started || room?.finished) && (
           <Button variant="danger" onClick={() => emit("exitGame")}>Close room</Button>
         )}
       </div>
 
       {closed && <div className="mb-6"><Notice>The host closed the room. Taking you back to Versus…</Notice></div>}
+      {error && <div className="mb-6"><Notice>{error}</Notice></div>}
 
       <div className="grid grid-cols-[1fr_17.5rem] gap-8 mobile:grid-cols-1 mobile:gap-6">
         <div className="min-w-0">
-          {results ? (
-            <Results room={results} onDone={() => router.push("/versus")} />
-          ) : room?.started && room.currentQuestion ? (
+          {room?.finished ? (
+            <Results room={room} isHost={isHost} onPlayAgain={() => emit("startGame")} onDone={() => router.push("/versus")} />
+          ) : room && question ? (
             <>
-              <div className="index-card relative flex h-[17.5rem] flex-col rounded-xl border border-line mobile:h-[15rem] shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)]">
-                <span className="px-7 pt-5 text-sm text-muted">Question {(room.currentIndex ?? 0) + 1}</span>
+              <div className="index-card relative flex h-[17.5rem] flex-col overflow-hidden rounded-xl border border-line mobile:h-[15rem] shadow-[0_12px_30px_-12px_rgb(0_0_0/0.25)]">
+                {timed && deadline !== null && <TimeBar deadline={deadline} total={room.settings.seconds * 1000} />}
+                <div className="flex items-center justify-between px-7 pt-5 text-sm text-muted">
+                  <span>Question {room.currentIndex + 1} of {room.totalQuestions}</span>
+                  {timed && deadline !== null && <Countdown deadline={deadline} />}
+                </div>
                 <AnimatePresence mode="wait">
                   <motion.p
-                    key={room.currentQuestion.id}
+                    key={question.id}
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -12 }}
                     className="flex flex-1 items-center justify-center px-10 pb-10 text-center font-card text-3xl leading-snug mobile:px-6 mobile:text-2xl"
                   >
-                    {room.currentQuestion.question}
+                    {question.question}
                   </motion.p>
                 </AnimatePresence>
                 <AnimatePresence>
@@ -109,6 +147,7 @@ export default function VersusRoomPage() {
                     <motion.div
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
                       className="absolute inset-x-6 bottom-5 rounded-lg bg-hl px-4 py-2 text-center text-hl-ink"
                     >
                       Answer: <span className="font-semibold">{answer || "—"}</span>
@@ -119,57 +158,149 @@ export default function VersusRoomPage() {
 
               <form onSubmit={submit} className="mt-6 flex gap-2">
                 <input
+                  ref={inputRef}
                   autoFocus
                   value={guess}
-                  onChange={(e) => { setGuess(e.target.value); setFeedback("idle"); }}
-                  disabled={answer !== null}
+                  onChange={(e) => { setGuess(e.target.value); setWrong(false); }}
+                  disabled={locked}
                   placeholder="Type your answer and press Enter"
-                  className={`${inputClass} h-12 text-lg ${feedback === "right" ? "border-good" : feedback === "wrong" ? "border-bad" : ""}`}
+                  className={`${inputClass} h-12 text-lg ${solved ? "border-good" : wrong ? "border-bad" : ""}`}
                 />
-                <Button size="lg" disabled={!guess.trim() || answer !== null}>Guess</Button>
+                <Button size="lg" disabled={!guess.trim() || locked}>Guess</Button>
               </form>
-              <p className={`mt-2 h-5 text-sm ${feedback === "right" ? "text-good" : "text-bad"}`}>
-                {feedback === "right" ? "Correct! Point is yours." : feedback === "wrong" ? "Not quite. Try again." : ""}
-              </p>
+              <p className={`mt-2 h-5 text-sm ${solved ? "text-good" : wrong && answer === null ? "text-bad" : "text-muted"}`}>{status}</p>
 
               {isHost && (
                 <div className="mt-6 flex gap-2">
-                  <Button variant="secondary" disabled={answer !== null} onClick={() => emit("revealAnswer")}>Reveal answer</Button>
-                  <Button onClick={() => emit("nextQuestion")}>Next question</Button>
+                  <Button variant="secondary" onClick={() => emit("nextQuestion")}>
+                    {answer === null ? "Skip question" : "Next question"}
+                  </Button>
                 </div>
               )}
             </>
           ) : (
-            <Panel className="flex h-[17.5rem] flex-col items-center justify-center px-4 text-center">
-              <p className="text-muted">Share this code with the people you&apos;re playing</p>
-              <p className="my-3 font-card text-7xl tracking-[0.2em] mobile:text-5xl">{code}</p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
-              >
-                {copied ? "Copied" : "Copy code"}
-              </Button>
-              <div className="mt-6">
-                {isHost ? (
-                  <Button size="lg" disabled={connecting || players.length < 1} onClick={() => emit("startGame")}>
-                    {connecting ? "Connecting…" : "Start game"}
-                  </Button>
-                ) : (
-                  <p className="text-sm text-muted">The host will start the game when everyone&apos;s in.</p>
-                )}
-              </div>
-            </Panel>
+            <>
+              <Panel className="flex h-[17.5rem] flex-col items-center justify-center px-4 text-center">
+                <p className="text-muted">Share this code with the people you&apos;re playing</p>
+                <p className="my-3 font-card text-7xl tracking-[0.2em] mobile:text-5xl">{code}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
+                >
+                  {copied ? "Copied" : "Copy code"}
+                </Button>
+                <div className="mt-6">
+                  {isHost ? (
+                    <Button size="lg" disabled={connecting || players.length < 1} onClick={() => emit("startGame")}>
+                      {connecting ? "Connecting…" : "Start game"}
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-muted">The host will start the game when everyone&apos;s in.</p>
+                  )}
+                </div>
+              </Panel>
+              {room && (
+                <GameSettings settings={room.settings} canEdit={isHost} onChange={(s) => emit("updateSettings", s)} />
+              )}
+            </>
           )}
         </div>
 
-        <Scoreboard players={players} hostId={room?.hostId} me={socketId} />
+        <Scoreboard players={players} hostId={room?.hostId} me={socketId} solvedBy={question ? room?.solvedBy ?? [] : []} />
       </div>
     </div>
   );
 }
 
-function Scoreboard({ players, hostId, me }: { players: RoomPlayer[]; hostId?: string; me: string }) {
+const MODES: { id: VersusSettings["mode"]; title: string; body: string }[] = [
+  { id: "first", title: "First to answer", body: "The first correct answer takes the point, then everyone moves on." },
+  { id: "timed", title: "Timed rounds", body: "Everyone gets the same time on each question. Every correct answer scores." },
+];
+
+/** Game mode picker in the lobby. Only the host can change it; everyone else sees what's set. */
+function GameSettings({
+  settings,
+  canEdit,
+  onChange,
+}: {
+  settings: VersusSettings;
+  canEdit: boolean;
+  onChange: (s: Partial<VersusSettings>) => void;
+}) {
+  return (
+    <Panel className="mt-6 p-6 mobile:p-5">
+      <h2 className="text-sm font-medium text-muted">Game mode{!canEdit && " · set by the host"}</h2>
+      <div className="mt-3 grid grid-cols-2 gap-3 mobile:grid-cols-1">
+        {MODES.map((m) => {
+          const active = settings.mode === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              aria-pressed={active}
+              disabled={!canEdit}
+              onClick={() => onChange({ mode: m.id })}
+              className={`rounded-lg border p-4 text-left transition ${
+                active ? "border-hl bg-hl/15" : "border-line hover:border-muted"
+              } ${!canEdit && !active ? "opacity-50" : ""} disabled:cursor-default disabled:hover:border-line`}
+            >
+              <span className="font-semibold">{m.title}</span>
+              <span className="mt-1 block text-sm text-muted">{m.body}</span>
+            </button>
+          );
+        })}
+      </div>
+      {settings.mode === "timed" && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-sm text-muted">Time per question</span>
+          {TIME_CHOICES.map((s) => (
+            <Chip
+              key={s}
+              active={settings.seconds === s}
+              disabled={!canEdit}
+              onClick={() => onChange({ seconds: s })}
+              className={!canEdit && settings.seconds !== s ? "opacity-50" : ""}
+            >
+              {s}s
+            </Chip>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+/** Seconds left on the current question. */
+function Countdown({ deadline }: { deadline: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, []);
+  const left = Math.max(0, deadline - now);
+  return (
+    <span className={`font-semibold tabular-nums ${left <= 5000 ? "text-bad" : "text-ink"}`}>
+      {Math.ceil(left / 1000)}s
+    </span>
+  );
+}
+
+/** Highlighter bar along the top of the card that runs down with the clock. */
+function TimeBar({ deadline, total }: { deadline: number; total: number }) {
+  const left = Math.max(0, deadline - Date.now());
+  return (
+    <motion.div
+      key={deadline}
+      className="absolute inset-x-0 top-0 h-1 origin-left bg-hl"
+      initial={{ scaleX: Math.min(1, left / total) }}
+      animate={{ scaleX: 0 }}
+      transition={{ duration: left / 1000, ease: "linear" }}
+    />
+  );
+}
+
+function Scoreboard({ players, hostId, me, solvedBy }: { players: RoomPlayer[]; hostId?: string; me: string; solvedBy: string[] }) {
   return (
     <aside>
       <h2 className="mb-3 text-sm font-medium text-muted">Players ({players.length})</h2>
@@ -193,6 +324,11 @@ function Scoreboard({ players, hostId, me }: { players: RoomPlayer[]; hostId?: s
                 {p.socketId === me && <span className="ml-1.5 text-xs text-muted">(you)</span>}
                 {p.socketId === hostId && <span className="ml-1.5 text-xs text-muted">host</span>}
               </span>
+              {solvedBy.includes(p.socketId) && (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-good" aria-label="Answered">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+              )}
               <motion.span key={p.score} initial={{ scale: 1.4 }} animate={{ scale: 1 }} className="text-lg font-bold tabular-nums">
                 {p.score}
               </motion.span>
@@ -205,17 +341,20 @@ function Scoreboard({ players, hostId, me }: { players: RoomPlayer[]; hostId?: s
   );
 }
 
-function Results({ room, onDone }: { room: RoomState; onDone: () => void }) {
+function Results({ room, isHost, onPlayAgain, onDone }: { room: RoomState; isHost: boolean; onPlayAgain: () => void; onDone: () => void }) {
   const ranked = [...room.players].sort((a, b) => b.score - a.score);
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-      <Panel className="p-10 text-center">
+      <Panel className="p-10 text-center mobile:px-6">
         <p className="text-muted">Game over</p>
-        <h2 className="mt-2 font-card text-5xl">
+        <h2 className="mt-2 font-card text-5xl mobile:text-4xl">
           <span className="bg-[linear-gradient(transparent_80%,var(--hl)_80%)] px-1">{ranked[0]?.username ?? "Nobody"} wins</span>
         </h2>
         <p className="mt-3 text-muted">with {ranked[0]?.score ?? 0} point{ranked[0]?.score === 1 ? "" : "s"}</p>
-        <Button size="lg" className="mt-8" onClick={onDone}>Back to Versus</Button>
+        <div className="mt-8 flex justify-center gap-2 mobile:flex-col">
+          {isHost && <Button size="lg" onClick={onPlayAgain}>Play again</Button>}
+          <Button size="lg" variant={isHost ? "secondary" : "primary"} onClick={onDone}>Back to Versus</Button>
+        </div>
       </Panel>
     </motion.div>
   );
