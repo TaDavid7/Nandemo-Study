@@ -1,117 +1,109 @@
 "use client";
-import { useState, useEffect } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { getUsername } from "@/lib/api";
+import { Button, Field, Notice, Panel, inputClass } from "@/components/ui";
 
 export default function AccountPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [user, setUser] = useState<string | null>(null);
 
-  const router = useRouter();
+  useEffect(() => setUser(getUsername()), []);
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem("username");
-    if (storedUser) setUser(storedUser);
-  }, []);
-
-  const submit = async () => {
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
     setError(null);
-    const res = await fetch(`/api/${mode}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Something went wrong");
-      return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/${mode}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Sign in failed. Check your username and password.");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("username", data.username);
+      router.push("/home");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
     }
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("username", data.username);
-    setUser(data.username);
   };
 
-  const logout = () => {
+  const signOut = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
-    setUser(null);
-    setUsername("");
-    setPassword("");
+    window.location.href = "/account"; // full reload so the header updates too
   };
 
   if (user) {
     return (
-      <div className="max-w-md mx-auto p-6 space-y-4">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome, {user}!</h1>
-        <p className="text-slate-600 dark:text-slate-400">You are logged in.</p>
-        <button
-          onClick={logout}
-          className="mt-2 bg-red-500 text-white px-4 py-2 rounded-xl hover:bg-red-600 transition font-medium"
-        >
-          Logout
-        </button>
+      <div className="mx-auto max-w-md pt-8">
+        <Panel className="p-8 text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-ink text-2xl font-semibold text-card">
+            {user[0]?.toUpperCase()}
+          </span>
+          <h1 className="mt-4 text-2xl font-bold">{user}</h1>
+          <p className="mt-1 text-muted">You&apos;re signed in.</p>
+          <div className="mt-6 flex justify-center gap-2">
+            <Button onClick={() => router.push("/home")}>Go to my decks</Button>
+            <Button variant="secondary" onClick={signOut}>Sign out</Button>
+          </div>
+        </Panel>
       </div>
     );
   }
 
+  const login = mode === "login";
+
   return (
-    <div className="max-w-md mx-auto p-6 space-y-5">
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-        {mode === "login" ? "Sign In" : "Create Account"}
-      </h1>
-
-      {error && (
-        <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
-          {error}
-        </div>
-      )}
-
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 shadow-sm space-y-4">
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Username</label>
-          <input
-            type="text"
-            placeholder="Enter username"
-            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600
-                       bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100
-                       placeholder-slate-400 dark:placeholder-slate-500
-                       focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
-          <input
-            type="password"
-            placeholder="Enter password"
-            className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600
-                       bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100
-                       placeholder-slate-400 dark:placeholder-slate-500
-                       focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 transition"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-          />
-        </div>
-
-        <button
-          onClick={submit}
-          className="w-full bg-indigo-600 text-white px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition font-medium"
+    <div className="mx-auto max-w-md pt-8">
+      <AnimatePresence mode="wait">
+        <motion.h1
+          key={mode}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          className="mb-6 text-4xl font-bold tracking-tight"
         >
-          {mode === "login" ? "Sign In" : "Create Account"}
-        </button>
-      </div>
+          {login ? "Welcome back" : "Create your account"}
+        </motion.h1>
+      </AnimatePresence>
 
-      <p className="text-center text-sm text-slate-600 dark:text-slate-400">
-        {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
-        <button
-          onClick={() => setMode(mode === "login" ? "register" : "login")}
-          className="text-indigo-600 dark:text-indigo-400 underline hover:no-underline"
-        >
-          {mode === "login" ? "Register here" : "Sign in instead"}
+      <Panel className="p-7">
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="Username">
+            <input autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required className={inputClass} />
+          </Field>
+          <Field label="Password">
+            <input
+              type="password"
+              autoComplete={login ? "current-password" : "new-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className={inputClass}
+            />
+          </Field>
+          {error && <Notice>{error}</Notice>}
+          <Button size="lg" className="w-full" disabled={busy}>
+            {busy ? "One moment…" : login ? "Sign in" : "Create account"}
+          </Button>
+        </form>
+      </Panel>
+
+      <p className="mt-5 text-center text-sm text-muted">
+        {login ? "New to Nandemo?" : "Already have an account?"}{" "}
+        <button onClick={() => { setMode(login ? "register" : "login"); setError(null); }} className="font-medium text-ink underline underline-offset-4">
+          {login ? "Create an account" : "Sign in"}
         </button>
       </p>
     </div>
